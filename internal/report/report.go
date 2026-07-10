@@ -12,6 +12,9 @@ import (
 	"github.com/aliyun/alicloud-v2-check/internal/scanner"
 )
 
+// UpgradeGuideURL is the official aliyun/alicloud provider v2 upgrade guide.
+const UpgradeGuideURL = "https://github.com/aliyun/terraform-provider-alicloud/blob/master/website/docs/guides/version-2-upgrade.html.markdown"
+
 // order controls category grouping in the text report.
 var order = []scanner.Category{scanner.ARG, scanner.REF, scanner.MODULE, scanner.PRESENT}
 
@@ -116,7 +119,8 @@ func Text(w io.Writer, findings []scanner.Finding, opts Options) {
 	actionable := CountActionable(findings)
 	fmt.Fprintln(w, line)
 	fmt.Fprintf(w, "汇总: 需处理 %d 处（ARG/REF/MODULE），信息提示 %d 处。\n", actionable, len(findings)-actionable)
-	fmt.Fprintln(w, "参考: 官方 version-2-upgrade 指南。")
+	fmt.Fprintln(w, "参考: 官方 version-2-upgrade 升级指南")
+	fmt.Fprintln(w, "      "+UpgradeGuideURL)
 	fmt.Fprintln(w, line)
 }
 
