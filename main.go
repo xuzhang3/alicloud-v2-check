@@ -21,6 +21,9 @@ var (
 	version = "dev"
 	commit  = "none"
 	date    = "unknown"
+	// defaultLang, if set to "zh" or "en" at build time, overrides the
+	// $LANG-based auto-detection when --lang is not passed.
+	defaultLang = ""
 )
 
 func main() {
@@ -30,6 +33,7 @@ func main() {
 type flags struct {
 	format        string
 	json          bool
+	output        string
 	engine        string
 	excludes      []string
 	failOn        string
@@ -72,8 +76,9 @@ func newRootCmd(exitCode *int, stdout io.Writer) *cobra.Command {
 	}
 
 	fl := cmd.Flags()
-	fl.StringVar(&f.format, "format", "text", "output format: text|json")
+	fl.StringVar(&f.format, "format", "text", "output format: text|json|markdown")
 	fl.BoolVar(&f.json, "json", false, "shorthand for --format json")
+	fl.StringVarP(&f.output, "output", "o", "", "write report to a file instead of stdout")
 	fl.StringVar(&f.engine, "engine", "auto", "parser engine: auto|hcl|regex")
 	fl.StringArrayVar(&f.excludes, "exclude", nil, "exclude path glob (repeatable); **/.claude/** always excluded")
 	fl.StringVar(&f.failOn, "fail-on", "any", "exit-code policy: none|module|ref|arg|any")
@@ -92,8 +97,13 @@ func runScan(f *flags, paths []string, stdout io.Writer, exitCode *int) error {
 	if f.json {
 		format = "json"
 	}
-	if format != "text" && format != "json" {
-		return fmt.Errorf("--format must be text or json (got %q)", format)
+	switch format {
+	case "text", "json", "markdown", "md":
+		if format == "md" {
+			format = "markdown"
+		}
+	default:
+		return fmt.Errorf("--format must be text|json|markdown (got %q)", format)
 	}
 
 	eng := scanner.Engine(f.engine)
@@ -113,7 +123,11 @@ func runScan(f *flags, paths []string, stdout io.Writer, exitCode *int) error {
 	var lang report.Lang
 	switch f.lang {
 	case "":
-		lang = report.AutoLang(os.Getenv("LANG") + os.Getenv("LC_ALL"))
+		if defaultLang != "" {
+			lang = report.Lang(defaultLang)
+		} else {
+			lang = report.AutoLang(os.Getenv("LANG") + os.Getenv("LC_ALL"))
+		}
 	case string(report.LangZH), string(report.LangEN):
 		lang = report.Lang(f.lang)
 	default:
@@ -143,19 +157,33 @@ func runScan(f *flags, paths []string, stdout io.Writer, exitCode *int) error {
 		}
 	}
 
+	// resolve output destination
+	w := stdout
+	if f.output != "" {
+		file, err := os.Create(f.output)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		w = file
+	}
+
 	ropts := report.Options{
 		Roots:       paths,
-		Color:       !f.noColor && isTerminalWriter(stdout),
+		Color:       f.output == "" && !f.noColor && isTerminalWriter(stdout),
 		Quiet:       f.quiet,
 		Lang:        lang,
 		VersionNote: note,
 	}
-	if format == "json" {
-		if err := report.JSON(stdout, findings, paths, len(files), ropts); err != nil {
+	switch format {
+	case "json":
+		if err := report.JSON(w, findings, paths, len(files), ropts); err != nil {
 			return err
 		}
-	} else {
-		report.Text(stdout, findings, ropts)
+	case "markdown":
+		report.Markdown(w, findings, ropts)
+	default:
+		report.Text(w, findings, ropts)
 	}
 
 	if skip {

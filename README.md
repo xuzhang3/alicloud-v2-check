@@ -42,6 +42,9 @@ alicloud-v2-check ./infra ./modules/rds/main.tf
 # JSON 输出（供 CI / 脚本消费）
 alicloud-v2-check --json ./infra
 
+# 导出 Markdown 报告到文件（贴 PR / wiki / issue）
+alicloud-v2-check --format markdown -o v2-report.md ./infra
+
 # 排除路径（可重复；支持 **/dir/** 段匹配）
 alicloud-v2-check --exclude '**/vendor/**' --exclude examples .
 
@@ -55,8 +58,9 @@ alicloud-v2-check --fail-on module .
 
 | 选项 | 说明 |
 |------|------|
-| `--format text\|json` | 输出格式（默认 text） |
+| `--format text\|json\|markdown` | 输出格式（默认 text） |
 | `--json` | 等价于 `--format json` |
+| `--output`, `-o <file>` | 写入文件而非 stdout |
 | `--engine auto\|hcl\|regex` | 解析引擎（默认 auto） |
 | `--lang zh\|en` | 输出语言（默认按 `$LANG` 自动判定） |
 | `--exclude <glob>` | 排除路径，可重复；默认已内置 `**/.claude/**` |

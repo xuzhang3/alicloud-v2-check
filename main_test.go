@@ -105,6 +105,38 @@ func TestCLI_LangEN(t *testing.T) {
 	}
 }
 
+func TestCLI_Markdown(t *testing.T) {
+	out, _, code := runArgs("--format", "markdown", "--lang", "en", "testdata")
+	if code != 1 {
+		t.Errorf("markdown exit=%d want 1", code)
+	}
+	if !strings.Contains(out, "# Alicloud Provider v2 Breaking Change Report") {
+		t.Error("markdown title missing")
+	}
+	if !strings.Contains(out, "| File | Resource | Field | Fix |") {
+		t.Errorf("markdown table header missing:\n%s", out)
+	}
+}
+
+func TestCLI_OutputToFile(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "report.md")
+	out, _, code := runArgs("--format", "markdown", "-o", fp, "testdata/modules")
+	if code != 1 {
+		t.Errorf("exit=%d want 1", code)
+	}
+	if out != "" {
+		t.Errorf("stdout should be empty when -o used, got: %q", out)
+	}
+	data, err := os.ReadFile(fp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "[MODULE]") {
+		t.Errorf("report file missing content:\n%s", data)
+	}
+}
+
 func TestCLI_QuietOmitsLegend(t *testing.T) {
 	out, _, _ := runArgs("--lang", "zh", "--quiet", "--no-color", "testdata/modules")
 	if strings.Contains(out, "【类别说明】") {

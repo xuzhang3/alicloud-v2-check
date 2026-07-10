@@ -143,6 +143,78 @@ func Text(w io.Writer, findings []scanner.Finding, opts Options) {
 	fmt.Fprintln(w, line)
 }
 
+// Markdown writes a Markdown report (good for PRs, wikis, issues).
+func Markdown(w io.Writer, findings []scanner.Finding, opts Options) {
+	bd := b(opts.Lang)
+	fmt.Fprintf(w, "# %s\n\n", bd.reportTitle)
+	fmt.Fprintf(w, "- %s`%s`\n", bd.scanPath, strings.Join(opts.Roots, "`, `"))
+	actionable := CountActionable(findings)
+	fmt.Fprintf(w, "- "+bd.summary+"\n", actionable, len(findings)-actionable)
+	fmt.Fprintf(w, "- %s [%s](%s)\n", bd.refLine, "version-2-upgrade", UpgradeGuideURL)
+
+	if opts.VersionNote != "" {
+		fmt.Fprintln(w)
+		for ln := range strings.SplitSeq(opts.VersionNote, "\n") {
+			fmt.Fprintf(w, "> %s\n", ln)
+		}
+	}
+
+	if len(findings) == 0 {
+		fmt.Fprintf(w, "\n> %s\n", bd.clean)
+		return
+	}
+
+	if !opts.Quiet {
+		fmt.Fprintf(w, "\n## %s\n\n", strings.Trim(bd.legendHead, "【】:："))
+		for _, cat := range order {
+			fmt.Fprintf(w, "- **%s** — %s\n", cat, bd.legend[cat])
+		}
+	}
+
+	byCat := map[scanner.Category][]scanner.Finding{}
+	for _, f := range findings {
+		byCat[f.Category] = append(byCat[f.Category], f)
+	}
+	for _, cat := range order {
+		items := byCat[cat]
+		if len(items) == 0 {
+			continue
+		}
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].File != items[j].File {
+				return items[i].File < items[j].File
+			}
+			return items[i].Line < items[j].Line
+		})
+		fmt.Fprintf(w, "\n## [%s] %s (%d)\n\n", cat, bd.catTitle[cat], len(items))
+		if cat == scanner.MODULE {
+			fmt.Fprintf(w, "| %s | %s | %s |\n|---|---|---|\n", bd.lblFile, bd.lblModule, bd.lblAdvice)
+			for _, f := range items {
+				fmt.Fprintf(w, "| `%s:%d` | %s | %s |\n",
+					f.File, f.Line, mdCell(orDash(f.Target)), mdCell(localize(f, opts.Lang)))
+			}
+			continue
+		}
+		fmt.Fprintf(w, "| %s | %s | %s | %s |\n|---|---|---|---|\n",
+			bd.lblFile, bd.lblResource, bd.lblField, bd.lblAdvice)
+		for _, f := range items {
+			conf := ""
+			if f.Confidence != scanner.High {
+				conf = " " + bd.heurTag
+			}
+			fmt.Fprintf(w, "| `%s:%d`%s | %s | %s | %s |\n",
+				f.File, f.Line, conf, mdCell(orUnknown(f.Target, bd)),
+				mdCell(orDash(f.Attr)), mdCell(localize(f, opts.Lang)))
+		}
+	}
+}
+
+// mdCell escapes pipes/newlines so a value is safe inside a Markdown table cell.
+func mdCell(s string) string {
+	s = strings.ReplaceAll(s, "|", "\\|")
+	return strings.ReplaceAll(s, "\n", " ")
+}
+
 // JSONReport is the machine-readable envelope.
 type JSONReport struct {
 	Roots           []string          `json:"roots"`
