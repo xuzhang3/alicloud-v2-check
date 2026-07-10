@@ -152,6 +152,47 @@ func TestAutoLang(t *testing.T) {
 	}
 }
 
+func TestTree(t *testing.T) {
+	files := []string{
+		"ws/example1/a.tf",
+		"ws/example1/b.tf",
+		"ws/clean/c.tf",
+	}
+	findings := []scanner.Finding{
+		{File: "ws/example1/a.tf", Line: 1, Category: scanner.ARG, Confidence: scanner.High},
+		{File: "ws/example1/a.tf", Line: 2, Category: scanner.REF, Confidence: scanner.High},
+		{File: "ws/example1/b.tf", Line: 3, Category: scanner.MODULE, Confidence: scanner.High},
+		{File: "ws/example1/a.tf", Line: 4, Category: scanner.PRESENT, Confidence: scanner.High}, // not actionable
+	}
+	var buf bytes.Buffer
+	Tree(&buf, files, findings, Options{Lang: LangEN})
+	out := buf.String()
+
+	if !strings.Contains(out, "Workspace structure") {
+		t.Error("missing header")
+	}
+	// a.tf has 2 actionable (ARG+REF, PRESENT excluded)
+	if !strings.Contains(out, "a.tf  ⚠ 2") {
+		t.Errorf("a.tf badge wrong:\n%s", out)
+	}
+	// b.tf has 1 (MODULE)
+	if !strings.Contains(out, "b.tf  ⚠ 1") {
+		t.Errorf("b.tf badge wrong:\n%s", out)
+	}
+	// clean file
+	if !strings.Contains(out, "c.tf  ✓") {
+		t.Errorf("c.tf should be clean:\n%s", out)
+	}
+	// example1 dir aggregate = 3
+	if !strings.Contains(out, "example1  (3)") {
+		t.Errorf("example1 aggregate wrong:\n%s", out)
+	}
+	// connectors present
+	if !strings.Contains(out, "├── ") || !strings.Contains(out, "└── ") {
+		t.Error("missing tree connectors")
+	}
+}
+
 func TestExitCode(t *testing.T) {
 	fs := sample()
 	cases := map[FailOn]int{
