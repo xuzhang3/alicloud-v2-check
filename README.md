@@ -66,6 +66,7 @@ alicloud-v2-check --fail-on module .
 | `--exclude <glob>` | 排除路径，可重复；默认已内置 `**/.claude/**` |
 | `--fail-on none\|module\|ref\|arg\|any` | 退出码策略（默认 `any`） |
 | `--ignore-version` | 即使 provider 约束指向 v3+ 也照常扫描 |
+| `--tree` | 先打印扫描到的工作空间结构树（文件标 ⚠ n / ✓）；仅 text/markdown |
 | `--no-color` | 关闭彩色（非 TTY 自动关闭） |
 | `--quiet` | 省略顶部类别说明图例 |
 | `--version` | 打印版本 |

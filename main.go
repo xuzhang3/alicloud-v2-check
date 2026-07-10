@@ -41,6 +41,7 @@ type flags struct {
 	ignoreVersion bool
 	noColor       bool
 	quiet         bool
+	tree          bool
 }
 
 // execute builds and runs the root command, returning the process exit code.
@@ -86,6 +87,7 @@ func newRootCmd(exitCode *int, stdout io.Writer) *cobra.Command {
 	fl.BoolVar(&f.ignoreVersion, "ignore-version", false, "scan even if the provider constraint targets v3+")
 	fl.BoolVar(&f.noColor, "no-color", false, "disable colored output")
 	fl.BoolVar(&f.quiet, "quiet", false, "omit the category legend")
+	fl.BoolVar(&f.tree, "tree", false, "print scanned workspace as a tree (text/markdown only)")
 
 	cmd.SetVersionTemplate("alicloud-v2-check {{.Version}}\n")
 	return cmd
@@ -181,8 +183,17 @@ func runScan(f *flags, paths []string, stdout io.Writer, exitCode *int) error {
 			return err
 		}
 	case "markdown":
+		if f.tree {
+			fmt.Fprint(w, "```\n")
+			report.Tree(w, files, findings, ropts)
+			fmt.Fprint(w, "```\n")
+		}
 		report.Markdown(w, findings, ropts)
 	default:
+		if f.tree {
+			report.Tree(w, files, findings, ropts)
+			fmt.Fprintln(w)
+		}
 		report.Text(w, findings, ropts)
 	}
 

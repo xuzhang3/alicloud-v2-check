@@ -35,6 +35,7 @@ type bundle struct {
 	unknownType string
 	summary     string // has two %d
 	refLine     string
+	treeTitle   string
 	// version gating
 	versionDetected string // "%s" = constraint
 	versionSkip     string // v3+ notice
@@ -74,6 +75,7 @@ var bundles = map[Lang]bundle{
 		unknownType:     "(无法确定,需人工确认)",
 		summary:         "汇总: 需处理 %d 处（ARG/REF/MODULE），信息提示 %d 处。",
 		refLine:         "参考: 官方 version-2-upgrade 升级指南",
+		treeTitle:       "工作空间结构（⚠ n = 待处理项数，✓ = 无问题）：",
 		versionDetected: "检测到 aliyun/alicloud provider 版本约束: %s",
 		versionSkip:     "该约束已指向 v3 及以上；本工具仅检查 1.x → 2.0 升级，判定为不适用，已跳过。可用 --ignore-version 强制扫描。",
 		versionRelevant: "该约束覆盖 v1/v2，适用本次 v2 升级检查。",
@@ -109,6 +111,7 @@ var bundles = map[Lang]bundle{
 		unknownType:     "(unknown, verify manually)",
 		summary:         "Summary: %d to fix (ARG/REF/MODULE), %d info.",
 		refLine:         "Reference: official version-2-upgrade guide",
+		treeTitle:       "Workspace structure (⚠ n = items to fix, ✓ = clean):",
 		versionDetected: "Detected aliyun/alicloud provider version constraint: %s",
 		versionSkip:     "This constraint targets v3+; this tool only checks the 1.x → 2.0 upgrade, so it does not apply and was skipped. Use --ignore-version to force a scan.",
 		versionRelevant: "This constraint covers v1/v2 and is in scope for the v2 upgrade check.",

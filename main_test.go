@@ -216,6 +216,21 @@ func TestCLI_TextToFile(t *testing.T) {
 	}
 }
 
+func TestCLI_Tree(t *testing.T) {
+	out, _, _ := runArgs("--tree", "--lang", "en", "--no-color", "--quiet", "testdata")
+	if !strings.Contains(out, "Workspace structure") {
+		t.Errorf("tree header missing:\n%s", out)
+	}
+	// affected file annotated, clean file checked
+	if !strings.Contains(out, "main.tf  ⚠ 4") || !strings.Contains(out, "main.tf  ✓") {
+		t.Errorf("tree badges missing:\n%s", out)
+	}
+	// tree branch glyphs present
+	if !strings.Contains(out, "└── ") || !strings.Contains(out, "├── ") {
+		t.Error("tree connectors missing")
+	}
+}
+
 func TestCLI_QuietOmitsLegend(t *testing.T) {
 	out, _, _ := runArgs("--lang", "zh", "--quiet", "--no-color", "testdata/modules")
 	if strings.Contains(out, "【类别说明】") {
