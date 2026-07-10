@@ -226,22 +226,14 @@ func ScanFile(path string) ([]Finding, error) {
 		raw := sc.Text()
 		line := stripInlineComment(raw)
 
-		// Track enclosing affected block type (shallow).
-		if m := reResourceDecl.FindStringSubmatch(line); m != nil {
-			if rules.IsAffectedType(m[1]) {
-				currentType = m[1]
-			}
-			if attrs, ok := rules.AffectedResources[m[1]]; ok {
-				findings = append(findings, present(path, lineNo, m[1], raw, attrs, "resource"))
-			}
+		// Track enclosing affected block type (shallow) and emit PRESENT.
+		if m := reResourceDecl.FindStringSubmatch(line); m != nil && rules.IsAffectedType(m[1]) {
+			currentType = m[1]
+			findings = append(findings, newPresent(path, lineNo, m[1], raw))
 		}
-		if m := reDataDecl.FindStringSubmatch(line); m != nil {
-			if rules.IsAffectedType(m[1]) {
-				currentType = m[1]
-			}
-			if attrs, ok := rules.AffectedDataSources[m[1]]; ok {
-				findings = append(findings, present(path, lineNo, m[1], raw, attrs, "data source"))
-			}
+		if m := reDataDecl.FindStringSubmatch(line); m != nil && rules.IsAffectedType(m[1]) {
+			currentType = m[1]
+			findings = append(findings, newPresent(path, lineNo, m[1], raw))
 		}
 
 		// [ARG] map assign -> block
@@ -290,10 +282,16 @@ func ScanFile(path string) ([]Finding, error) {
 	return findings, nil
 }
 
-func present(path string, line int, typ, raw string, attrs []string, _ string) Finding {
+// newPresent builds a PRESENT finding, looking up the affected field list for
+// the given resource/data type from the rules catalog. Shared by both engines.
+func newPresent(path string, line int, typ, code string) Finding {
+	attrs := rules.AffectedResources[typ]
+	if attrs == nil {
+		attrs = rules.AffectedDataSources[typ]
+	}
 	return Finding{
 		File: path, Line: line, Category: PRESENT, Target: typ,
-		Attr: strings.Join(attrs, ", "), Confidence: High, Code: raw,
+		Attr: strings.Join(attrs, ", "), Confidence: High, Code: code,
 	}
 }
 

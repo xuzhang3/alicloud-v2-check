@@ -68,19 +68,11 @@ func walkBody(body *hclsyntax.Body, enclosing, path string, lines []string, out 
 	for _, blk := range body.Blocks {
 		newEnclosing := enclosing
 		switch blk.Type {
-		case "resource":
-			if len(blk.Labels) > 0 {
-				if attrs, ok := rules.AffectedResources[blk.Labels[0]]; ok {
-					newEnclosing = blk.Labels[0]
-					*out = append(*out, presentHCL(path, lines, blk, attrs, "resource"))
-				}
-			}
-		case "data":
-			if len(blk.Labels) > 0 {
-				if attrs, ok := rules.AffectedDataSources[blk.Labels[0]]; ok {
-					newEnclosing = blk.Labels[0]
-					*out = append(*out, presentHCL(path, lines, blk, attrs, "data source"))
-				}
+		case "resource", "data":
+			if len(blk.Labels) > 0 && rules.IsAffectedType(blk.Labels[0]) {
+				newEnclosing = blk.Labels[0]
+				ln := blk.TypeRange.Start.Line
+				*out = append(*out, newPresent(path, ln, blk.Labels[0], codeLine(lines, ln)))
 			}
 		case "module":
 			if src, ok := blk.Body.Attributes["source"]; ok {
@@ -97,14 +89,6 @@ func walkBody(body *hclsyntax.Body, enclosing, path string, lines []string, out 
 			}
 		}
 		walkBody(blk.Body, newEnclosing, path, lines, out)
-	}
-}
-
-func presentHCL(path string, lines []string, blk *hclsyntax.Block, attrs []string, _ string) Finding {
-	ln := blk.TypeRange.Start.Line
-	return Finding{
-		File: path, Line: ln, Category: PRESENT, Target: blk.Labels[0],
-		Attr: strings.Join(attrs, ", "), Confidence: High, Code: codeLine(lines, ln),
 	}
 }
 

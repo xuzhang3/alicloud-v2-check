@@ -43,6 +43,23 @@ const UpgradeGuideURL = "https://github.com/aliyun/terraform-provider-alicloud/b
 // order controls category grouping in the text report.
 var order = []scanner.Category{scanner.ARG, scanner.REF, scanner.MODULE, scanner.PRESENT}
 
+// groupSorted buckets findings by category, each bucket sorted by file then line.
+func groupSorted(findings []scanner.Finding) map[scanner.Category][]scanner.Finding {
+	by := map[scanner.Category][]scanner.Finding{}
+	for _, f := range findings {
+		by[f.Category] = append(by[f.Category], f)
+	}
+	for _, items := range by {
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].File != items[j].File {
+				return items[i].File < items[j].File
+			}
+			return items[i].Line < items[j].Line
+		})
+	}
+	return by
+}
+
 // ANSI colors per category (empty when color disabled).
 func colorFor(cat scanner.Category, color bool) (string, string) {
 	if !color {
@@ -98,22 +115,12 @@ func Text(w io.Writer, findings []scanner.Finding, opts Options) {
 		fmt.Fprintln(w, bd.heuristic)
 	}
 
-	byCat := map[scanner.Category][]scanner.Finding{}
-	for _, f := range findings {
-		byCat[f.Category] = append(byCat[f.Category], f)
-	}
-
+	byCat := groupSorted(findings)
 	for _, cat := range order {
 		items := byCat[cat]
 		if len(items) == 0 {
 			continue
 		}
-		sort.Slice(items, func(i, j int) bool {
-			if items[i].File != items[j].File {
-				return items[i].File < items[j].File
-			}
-			return items[i].Line < items[j].Line
-		})
 		c, reset := colorFor(cat, opts.Color)
 		fmt.Fprintln(w, "\n"+sub)
 		fmt.Fprintf(w, "%s[%s] %s  (%d)%s\n", c, cat, bd.catTitle[cat], len(items), reset)
@@ -171,21 +178,12 @@ func Markdown(w io.Writer, findings []scanner.Finding, opts Options) {
 		}
 	}
 
-	byCat := map[scanner.Category][]scanner.Finding{}
-	for _, f := range findings {
-		byCat[f.Category] = append(byCat[f.Category], f)
-	}
+	byCat := groupSorted(findings)
 	for _, cat := range order {
 		items := byCat[cat]
 		if len(items) == 0 {
 			continue
 		}
-		sort.Slice(items, func(i, j int) bool {
-			if items[i].File != items[j].File {
-				return items[i].File < items[j].File
-			}
-			return items[i].Line < items[j].Line
-		})
 		fmt.Fprintf(w, "\n## [%s] %s (%d)\n\n", cat, bd.catTitle[cat], len(items))
 		if cat == scanner.MODULE {
 			fmt.Fprintf(w, "| %s | %s | %s |\n|---|---|---|\n", bd.lblFile, bd.lblModule, bd.lblAdvice)

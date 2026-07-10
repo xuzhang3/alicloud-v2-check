@@ -1,6 +1,7 @@
 package report
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/aliyun/alicloud-v2-check/internal/rules"
@@ -41,6 +42,11 @@ type bundle struct {
 	versionOverride string
 	kindResource    string
 	kindDataSource  string
+	// finding message templates
+	argMsg     string // %[1]s = attr
+	refMsg     string // %[1]s = attr, %[2]s = key
+	moduleMsg  string
+	presentMsg string // %[1]s = kind, %[2]s = fields
 }
 
 var bundles = map[Lang]bundle{
@@ -74,6 +80,10 @@ var bundles = map[Lang]bundle{
 		versionOverride: "（--ignore-version 已开启，忽略版本判定）",
 		kindResource:    "resource",
 		kindDataSource:  "data source",
+		argMsg:          "map 赋值 `%[1]s = {` 需改为 block 写法 `%[1]s { ... }`",
+		refMsg:          "`.%[1]s[\"%[2]s\"]` 需改为 `.%[1]s[0].%[2]s`",
+		moduleMsg:       "该模块内部使用受影响资源，请升级到兼容 v2 的模块版本并核对其 output 引用",
+		presentMsg:      "受影响 %[1]s，升级后请核对其 map->list 属性: %[2]s",
 	},
 	LangEN: {
 		reportTitle: "Alicloud Provider v2 Breaking Change Report",
@@ -105,6 +115,10 @@ var bundles = map[Lang]bundle{
 		versionOverride: "(--ignore-version set; version gating skipped)",
 		kindResource:    "resource",
 		kindDataSource:  "data source",
+		argMsg:          "map assignment `%[1]s = {` must become block syntax `%[1]s { ... }`",
+		refMsg:          "`.%[1]s[\"%[2]s\"]` must become `.%[1]s[0].%[2]s`",
+		moduleMsg:       "this module internally uses affected resources; upgrade to a v2-compatible version and review its output references",
+		presentMsg:      "affected %[1]s; after upgrade review its map→list attributes: %[2]s",
 	},
 }
 
@@ -120,43 +134,25 @@ func localize(f scanner.Finding, lang Lang) string {
 	bd := b(lang)
 	switch f.Category {
 	case scanner.ARG:
-		if lang == LangEN {
-			return "map assignment `" + f.Attr + " = {` must become block syntax `" + f.Attr + " { ... }`"
-		}
-		return "map 赋值 `" + f.Attr + " = {` 需改为 block 写法 `" + f.Attr + " { ... }`"
+		return fmt.Sprintf(bd.argMsg, f.Attr)
 	case scanner.REF:
-		old := "`." + f.Attr + `["` + f.Key + `"]` + "`"
-		neu := "`." + f.Attr + "[0]." + f.Key + "`"
-		if lang == LangEN {
-			return old + " must become " + neu
-		}
-		return old + " 需改为 " + neu
+		return fmt.Sprintf(bd.refMsg, f.Attr, f.Key)
 	case scanner.MODULE:
-		if lang == LangEN {
-			return "this module internally uses affected resources; upgrade to a v2-compatible version and review its output references"
-		}
-		return "该模块内部使用受影响资源，请升级到兼容 v2 的模块版本并核对其 output 引用"
+		return bd.moduleMsg
 	case scanner.PRESENT:
 		kind := bd.kindResource
 		if _, ok := rules.AffectedDataSources[f.Target]; ok {
 			kind = bd.kindDataSource
 		}
-		if lang == LangEN {
-			return "affected " + kind + "; after upgrade review its map→list attributes: " + f.Attr
-		}
-		return "受影响 " + kind + "，升级后请核对其 map->list 属性: " + f.Attr
+		return fmt.Sprintf(bd.presentMsg, kind, f.Attr)
 	}
 	return ""
 }
 
-// autoLang picks a language from an environment value (LANG/LC_ALL). Defaults to en.
-func autoLang(env string) Lang {
-	e := strings.ToLower(env)
-	if strings.HasPrefix(e, "zh") || strings.Contains(e, "zh_") || strings.Contains(e, "zh-") {
+// AutoLang picks a language from an environment value (LANG/LC_ALL). Defaults to en.
+func AutoLang(env string) Lang {
+	if strings.HasPrefix(strings.ToLower(env), "zh") {
 		return LangZH
 	}
 	return LangEN
 }
-
-// AutoLang is exported for main to detect language from the environment.
-func AutoLang(env string) Lang { return autoLang(env) }

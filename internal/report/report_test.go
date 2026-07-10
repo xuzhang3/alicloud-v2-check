@@ -141,13 +141,13 @@ func TestJSON_LocalizedMessageEN(t *testing.T) {
 }
 
 func TestAutoLang(t *testing.T) {
-	if autoLang("zh_CN.UTF-8") != LangZH {
+	if AutoLang("zh_CN.UTF-8") != LangZH {
 		t.Error("zh_CN should map to zh")
 	}
-	if autoLang("en_US.UTF-8") != LangEN {
+	if AutoLang("en_US.UTF-8") != LangEN {
 		t.Error("en_US should map to en")
 	}
-	if autoLang("") != LangEN {
+	if AutoLang("") != LangEN {
 		t.Error("empty should default to en")
 	}
 }
