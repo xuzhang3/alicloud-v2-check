@@ -65,6 +65,7 @@ alicloud-v2-check --fail-on module .
 | `--lang zh\|en` | 输出语言（默认按 `$LANG` 自动判定） |
 | `--exclude <glob>` | 排除路径，可重复；默认已内置 `**/.claude/**` |
 | `--fail-on none\|module\|ref\|arg\|any` | 退出码策略（默认 `any`） |
+| `--group-by category\|resource` | 报告分组方式（默认 category）；resource 按资源名归类 |
 | `--ignore-version` | 即使 provider 约束指向 v3+ 也照常扫描 |
 | `--tree` | 先打印扫描到的工作空间结构树（文件标 ⚠ n / ✓）；仅 text/markdown |
 | `--no-color` | 关闭彩色（非 TTY 自动关闭） |

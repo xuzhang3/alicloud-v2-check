@@ -216,6 +216,26 @@ func TestCLI_TextToFile(t *testing.T) {
 	}
 }
 
+func TestCLI_GroupByResource(t *testing.T) {
+	out, _, code := runArgs("--group-by", "resource", "--lang", "en", "--no-color", "--quiet", "testdata/resources")
+	if code != 1 {
+		t.Errorf("exit=%d want 1", code)
+	}
+	// resource name as a section header, category tagged per finding
+	if !strings.Contains(out, "alicloud_api_gateway_instance  (3)") {
+		t.Errorf("resource group header missing:\n%s", out)
+	}
+	if !strings.Contains(out, ":5  [ARG]") || !strings.Contains(out, ":11  [REF]") {
+		t.Errorf("category tags missing in resource grouping:\n%s", out)
+	}
+}
+
+func TestCLI_BadGroupBy(t *testing.T) {
+	if _, _, code := runArgs("--group-by", "bogus", "testdata"); code != 2 {
+		t.Errorf("bad --group-by exit=%d want 2", code)
+	}
+}
+
 func TestCLI_Tree(t *testing.T) {
 	out, _, _ := runArgs("--tree", "--lang", "en", "--no-color", "--quiet", "testdata")
 	if !strings.Contains(out, "Workspace structure") {

@@ -37,6 +37,7 @@ type flags struct {
 	engine        string
 	excludes      []string
 	failOn        string
+	groupBy       string
 	lang          string
 	ignoreVersion bool
 	noColor       bool
@@ -83,6 +84,7 @@ func newRootCmd(exitCode *int, stdout io.Writer) *cobra.Command {
 	fl.StringVar(&f.engine, "engine", "auto", "parser engine: auto|hcl|regex")
 	fl.StringArrayVar(&f.excludes, "exclude", nil, "exclude path glob (repeatable); **/.claude/** always excluded")
 	fl.StringVar(&f.failOn, "fail-on", "any", "exit-code policy: none|module|ref|arg|any")
+	fl.StringVar(&f.groupBy, "group-by", "category", "group findings by: category|resource")
 	fl.StringVar(&f.lang, "lang", "", "language: zh|en (default: auto from $LANG)")
 	fl.BoolVar(&f.ignoreVersion, "ignore-version", false, "scan even if the provider constraint targets v3+")
 	fl.BoolVar(&f.noColor, "no-color", false, "disable colored output")
@@ -120,6 +122,13 @@ func runScan(f *flags, paths []string, stdout io.Writer, exitCode *int) error {
 	case report.FailNone, report.FailModule, report.FailRef, report.FailArg, report.FailAny:
 	default:
 		return fmt.Errorf("--fail-on must be none|module|ref|arg|any (got %q)", f.failOn)
+	}
+
+	groupBy := report.GroupBy(f.groupBy)
+	switch groupBy {
+	case report.GroupByCategory, report.GroupByResource:
+	default:
+		return fmt.Errorf("--group-by must be category|resource (got %q)", f.groupBy)
 	}
 
 	var lang report.Lang
@@ -175,6 +184,7 @@ func runScan(f *flags, paths []string, stdout io.Writer, exitCode *int) error {
 		Color:       f.output == "" && !f.noColor && isTerminalWriter(stdout),
 		Quiet:       f.quiet,
 		Lang:        lang,
+		GroupBy:     groupBy,
 		VersionNote: note,
 	}
 	switch format {

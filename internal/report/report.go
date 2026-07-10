@@ -78,14 +78,86 @@ func colorFor(cat scanner.Category, color bool) (string, string) {
 	}
 }
 
+// GroupBy selects how findings are grouped in the report.
+type GroupBy string
+
+const (
+	GroupByCategory GroupBy = "category" // ARG/REF/MODULE/PRESENT (default)
+	GroupByResource GroupBy = "resource" // by affected resource / module name
+)
+
 // Options controls rendering.
 type Options struct {
-	Roots []string
-	Color bool
-	Quiet bool // omit the legend
-	Lang  Lang // output language (default zh)
+	Roots   []string
+	Color   bool
+	Quiet   bool    // omit the legend
+	Lang    Lang    // output language (default zh)
+	GroupBy GroupBy // grouping mode (default category)
 	// VersionNote, if set, is printed near the top (provider-version gating).
 	VersionNote string
+}
+
+type resourceGroup struct {
+	title string
+	items []scanner.Finding
+}
+
+// groupByResource buckets findings by Target (resource type / module / unknown),
+// returning groups sorted by title, each group's items sorted by file:line.
+func groupByResource(findings []scanner.Finding, bd bundle) []resourceGroup {
+	buckets := map[string][]scanner.Finding{}
+	for _, f := range findings {
+		key := f.Target
+		if key == "" {
+			key = bd.unknownType
+		}
+		buckets[key] = append(buckets[key], f)
+	}
+	keys := make([]string, 0, len(buckets))
+	for k := range buckets {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	groups := make([]resourceGroup, 0, len(keys))
+	for _, k := range keys {
+		items := buckets[k]
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].File != items[j].File {
+				return items[i].File < items[j].File
+			}
+			return items[i].Line < items[j].Line
+		})
+		groups = append(groups, resourceGroup{title: k, items: items})
+	}
+	return groups
+}
+
+// writeBlock prints one finding block. When withCat is true (resource grouping)
+// the category is tagged on the file line and the redundant resource/module line
+// is omitted; otherwise (category grouping) the resource/module line is shown.
+func writeBlock(w io.Writer, f scanner.Finding, bd bundle, lang Lang, withCat bool) {
+	conf := ""
+	if f.Confidence != scanner.High {
+		conf = "  " + bd.heurTag
+	}
+	cat := ""
+	if withCat {
+		cat = "  [" + string(f.Category) + "]"
+	}
+	fmt.Fprintf(w, "  %s: %s:%d%s%s\n", bd.lblFile, f.File, f.Line, cat, conf)
+	switch {
+	case f.Category == scanner.MODULE:
+		if !withCat {
+			fmt.Fprintf(w, "  %s: %s\n", bd.lblModule, orDash(f.Target))
+		}
+	case !withCat:
+		fmt.Fprintf(w, "  %s: %s\n", bd.lblResource, orUnknown(f.Target, bd))
+		fmt.Fprintf(w, "  %s: %s\n", bd.lblField, orDash(f.Attr))
+	case f.Attr != "":
+		fmt.Fprintf(w, "  %s: %s\n", bd.lblField, f.Attr)
+	}
+	fmt.Fprintf(w, "  %s: %s\n", bd.lblAdvice, localize(f, lang))
+	fmt.Fprintf(w, "  %s: %s\n\n", bd.lblCode, strings.TrimSpace(f.Code))
 }
 
 // Text writes the human-readable report.
@@ -115,30 +187,29 @@ func Text(w io.Writer, findings []scanner.Finding, opts Options) {
 		fmt.Fprintln(w, bd.heuristic)
 	}
 
-	byCat := groupSorted(findings)
-	for _, cat := range order {
-		items := byCat[cat]
-		if len(items) == 0 {
-			continue
+	if opts.GroupBy == GroupByResource {
+		for _, g := range groupByResource(findings, bd) {
+			fmt.Fprintln(w, "\n"+sub)
+			fmt.Fprintf(w, "%s  (%d)\n", g.title, len(g.items))
+			fmt.Fprintln(w, sub)
+			for _, f := range g.items {
+				writeBlock(w, f, bd, opts.Lang, true)
+			}
 		}
-		c, reset := colorFor(cat, opts.Color)
-		fmt.Fprintln(w, "\n"+sub)
-		fmt.Fprintf(w, "%s[%s] %s  (%d)%s\n", c, cat, bd.catTitle[cat], len(items), reset)
-		fmt.Fprintln(w, sub)
-		for _, f := range items {
-			conf := ""
-			if f.Confidence != scanner.High {
-				conf = "  " + bd.heurTag
+	} else {
+		byCat := groupSorted(findings)
+		for _, cat := range order {
+			items := byCat[cat]
+			if len(items) == 0 {
+				continue
 			}
-			fmt.Fprintf(w, "  %s: %s:%d%s\n", bd.lblFile, f.File, f.Line, conf)
-			if cat == scanner.MODULE {
-				fmt.Fprintf(w, "  %s: %s\n", bd.lblModule, orDash(f.Target))
-			} else {
-				fmt.Fprintf(w, "  %s: %s\n", bd.lblResource, orUnknown(f.Target, bd))
-				fmt.Fprintf(w, "  %s: %s\n", bd.lblField, orDash(f.Attr))
+			c, reset := colorFor(cat, opts.Color)
+			fmt.Fprintln(w, "\n"+sub)
+			fmt.Fprintf(w, "%s[%s] %s  (%d)%s\n", c, cat, bd.catTitle[cat], len(items), reset)
+			fmt.Fprintln(w, sub)
+			for _, f := range items {
+				writeBlock(w, f, bd, opts.Lang, false)
 			}
-			fmt.Fprintf(w, "  %s: %s\n", bd.lblAdvice, localize(f, opts.Lang))
-			fmt.Fprintf(w, "  %s: %s\n\n", bd.lblCode, strings.TrimSpace(f.Code))
 		}
 	}
 

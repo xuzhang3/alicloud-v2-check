@@ -152,6 +152,23 @@ func TestAutoLang(t *testing.T) {
 	}
 }
 
+func TestText_GroupByResource(t *testing.T) {
+	var buf bytes.Buffer
+	Text(&buf, sample(), Options{Roots: []string{"."}, Lang: LangEN, GroupBy: GroupByResource, Quiet: true})
+	out := buf.String()
+	// sample has 2 findings on alicloud_cs_kubernetes (ARG line 3, REF line 8) + PRESENT
+	if !strings.Contains(out, "alicloud_cs_kubernetes  (3)") {
+		t.Errorf("resource header/count wrong:\n%s", out)
+	}
+	if !strings.Contains(out, ":3  [ARG]") || !strings.Contains(out, ":8  [REF]") {
+		t.Errorf("category tags missing:\n%s", out)
+	}
+	// module grouped under its own path
+	if !strings.Contains(out, "terraform-alicloud-modules/rds/alicloud  (1)") {
+		t.Errorf("module group missing:\n%s", out)
+	}
+}
+
 func TestTree(t *testing.T) {
 	files := []string{
 		"ws/example1/a.tf",
