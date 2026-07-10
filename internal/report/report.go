@@ -10,27 +10,38 @@ import (
 	"strings"
 
 	"github.com/aliyun/alicloud-v2-check/internal/scanner"
+	"github.com/aliyun/alicloud-v2-check/internal/tfversion"
 )
+
+// VersionNote builds the provider-version gating notice for the report. Returns
+// "" when no alicloud version constraint was detected.
+func VersionNote(v tfversion.Verdict, lang Lang, ignore bool) string {
+	if len(v.Constraints) == 0 {
+		return ""
+	}
+	bd := b(lang)
+	raws := make([]string, 0, len(v.Constraints))
+	for _, c := range v.Constraints {
+		raws = append(raws, fmt.Sprintf("%s (%s:%d)", c.Raw, c.File, c.Line))
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, bd.versionDetected, strings.Join(raws, "; "))
+	switch {
+	case ignore:
+		fmt.Fprintf(&sb, "\n%s", bd.versionOverride)
+	case v.OnlyV3Plus:
+		fmt.Fprintf(&sb, "\n%s", bd.versionSkip)
+	case v.AppliesV2:
+		fmt.Fprintf(&sb, "\n%s", bd.versionRelevant)
+	}
+	return sb.String()
+}
 
 // UpgradeGuideURL is the official aliyun/alicloud provider v2 upgrade guide.
 const UpgradeGuideURL = "https://github.com/aliyun/terraform-provider-alicloud/blob/master/website/docs/guides/version-2-upgrade.html.markdown"
 
 // order controls category grouping in the text report.
 var order = []scanner.Category{scanner.ARG, scanner.REF, scanner.MODULE, scanner.PRESENT}
-
-var title = map[scanner.Category]string{
-	scanner.ARG:     "map 赋值参数需改为 block 写法",
-	scanner.REF:     "map 下标引用需改为 list 下标",
-	scanner.MODULE:  "引用了已知受影响的模块",
-	scanner.PRESENT: "出现受影响的资源 / 数据源（信息）",
-}
-
-var legend = map[scanner.Category]string{
-	scanner.ARG:     "map 赋值参数 → 改成 block 写法。  例: `runtime = { ... }`  →  `runtime { ... }`",
-	scanner.REF:     "map 下标引用 → 改成 list 下标。  例: `x.connections[\"key\"]`  →  `x.connections[0].key`",
-	scanner.MODULE:  "引用了已知受影响的模块。  需升级模块版本并核对其 output 引用写法。",
-	scanner.PRESENT: "（信息）出现受影响的资源/数据源。  未必有错，升级后请核对其 map→list 属性。",
-}
 
 // ANSI colors per category (empty when color disabled).
 func colorFor(cat scanner.Category, color bool) (string, string) {
@@ -55,28 +66,36 @@ type Options struct {
 	Roots []string
 	Color bool
 	Quiet bool // omit the legend
+	Lang  Lang // output language (default zh)
+	// VersionNote, if set, is printed near the top (provider-version gating).
+	VersionNote string
 }
 
 // Text writes the human-readable report.
 func Text(w io.Writer, findings []scanner.Finding, opts Options) {
+	bd := b(opts.Lang)
 	line := strings.Repeat("=", 72)
 	sub := strings.Repeat("-", 72)
 	fmt.Fprintln(w, line)
-	fmt.Fprintln(w, "Alicloud Provider v2 Breaking Change 扫描报告")
-	fmt.Fprintln(w, "扫描路径: "+strings.Join(opts.Roots, ", "))
+	fmt.Fprintln(w, bd.reportTitle)
+	fmt.Fprintln(w, bd.scanPath+strings.Join(opts.Roots, ", "))
 	fmt.Fprintln(w, line)
 
+	if opts.VersionNote != "" {
+		fmt.Fprintln(w, "\n"+opts.VersionNote)
+	}
+
 	if len(findings) == 0 {
-		fmt.Fprintln(w, "\n未发现受影响的资源、写法或模块。可放心升级到 v2（仍建议先跑 terraform plan 复核）。")
+		fmt.Fprintln(w, "\n"+bd.clean)
 		return
 	}
 
 	if !opts.Quiet {
-		fmt.Fprintln(w, "\n【类别说明】所有 v2 breaking change 本质都是属性从 TypeMap 变为 TypeList：")
+		fmt.Fprintln(w, "\n"+bd.legendHead)
 		for _, cat := range order {
-			fmt.Fprintf(w, "  [%-7s] %s\n", cat, legend[cat])
+			fmt.Fprintf(w, "  [%-7s] %s\n", cat, bd.legend[cat])
 		}
-		fmt.Fprintln(w, "  标注 [启发式/需人工确认] = 仅凭属性名匹配、无法确定所属资源类型，需人工判断。")
+		fmt.Fprintln(w, bd.heuristic)
 	}
 
 	byCat := map[scanner.Category][]scanner.Finding{}
@@ -97,29 +116,29 @@ func Text(w io.Writer, findings []scanner.Finding, opts Options) {
 		})
 		c, reset := colorFor(cat, opts.Color)
 		fmt.Fprintln(w, "\n"+sub)
-		fmt.Fprintf(w, "%s[%s] %s  （%d 处）%s\n", c, cat, title[cat], len(items), reset)
+		fmt.Fprintf(w, "%s[%s] %s  (%d)%s\n", c, cat, bd.catTitle[cat], len(items), reset)
 		fmt.Fprintln(w, sub)
 		for _, f := range items {
 			conf := ""
 			if f.Confidence != scanner.High {
-				conf = "  [启发式/需人工确认]"
+				conf = "  " + bd.heurTag
 			}
-			fmt.Fprintf(w, "  文件: %s:%d%s\n", f.File, f.Line, conf)
+			fmt.Fprintf(w, "  %s: %s:%d%s\n", bd.lblFile, f.File, f.Line, conf)
 			if cat == scanner.MODULE {
-				fmt.Fprintf(w, "  模块: %s\n", orDash(f.Target))
+				fmt.Fprintf(w, "  %s: %s\n", bd.lblModule, orDash(f.Target))
 			} else {
-				fmt.Fprintf(w, "  资源: %s\n", orUnknown(f.Target))
-				fmt.Fprintf(w, "  字段: %s\n", orDash(f.Attr))
+				fmt.Fprintf(w, "  %s: %s\n", bd.lblResource, orUnknown(f.Target, bd))
+				fmt.Fprintf(w, "  %s: %s\n", bd.lblField, orDash(f.Attr))
 			}
-			fmt.Fprintf(w, "  建议: %s\n", f.Message)
-			fmt.Fprintf(w, "  代码: %s\n\n", strings.TrimSpace(f.Code))
+			fmt.Fprintf(w, "  %s: %s\n", bd.lblAdvice, localize(f, opts.Lang))
+			fmt.Fprintf(w, "  %s: %s\n\n", bd.lblCode, strings.TrimSpace(f.Code))
 		}
 	}
 
 	actionable := CountActionable(findings)
 	fmt.Fprintln(w, line)
-	fmt.Fprintf(w, "汇总: 需处理 %d 处（ARG/REF/MODULE），信息提示 %d 处。\n", actionable, len(findings)-actionable)
-	fmt.Fprintln(w, "参考: 官方 version-2-upgrade 升级指南")
+	fmt.Fprintf(w, bd.summary+"\n", actionable, len(findings)-actionable)
+	fmt.Fprintln(w, bd.refLine)
 	fmt.Fprintln(w, "      "+UpgradeGuideURL)
 	fmt.Fprintln(w, line)
 }
@@ -129,13 +148,16 @@ type JSONReport struct {
 	Roots           []string          `json:"roots"`
 	ScannedFiles    int               `json:"scanned_files"`
 	ActionableCount int               `json:"actionable_count"`
+	VersionNote     string            `json:"version_note,omitempty"`
 	Findings        []scanner.Finding `json:"findings"`
 }
 
-// JSON writes the findings as indented JSON.
-func JSON(w io.Writer, findings []scanner.Finding, roots []string, scanned int) error {
-	if findings == nil {
-		findings = []scanner.Finding{}
+// JSON writes the findings as indented JSON, localizing each Message.
+func JSON(w io.Writer, findings []scanner.Finding, roots []string, scanned int, opts Options) error {
+	out := make([]scanner.Finding, len(findings))
+	for i, f := range findings {
+		f.Message = localize(f, opts.Lang)
+		out[i] = f
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -143,8 +165,9 @@ func JSON(w io.Writer, findings []scanner.Finding, roots []string, scanned int) 
 	return enc.Encode(JSONReport{
 		Roots:           roots,
 		ScannedFiles:    scanned,
-		ActionableCount: CountActionable(findings),
-		Findings:        findings,
+		ActionableCount: CountActionable(out),
+		VersionNote:     opts.VersionNote,
+		Findings:        out,
 	})
 }
 
@@ -219,9 +242,9 @@ func orDash(s string) string {
 	return s
 }
 
-func orUnknown(s string) string {
+func orUnknown(s string, bd bundle) string {
 	if s == "" {
-		return "(无法确定,需人工确认)"
+		return bd.unknownType
 	}
 	return s
 }

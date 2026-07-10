@@ -83,3 +83,9 @@ func IsAffectedModule(source string) bool {
 func IsBlockArg(attr string) bool {
 	return slices.Contains(BlockArgAttrs, attr)
 }
+
+// IsMapIndexAttr reports whether attr is an attribute that changed
+// TypeMap -> TypeList (so a `.attr["k"]` reference must become `.attr[0].k`).
+func IsMapIndexAttr(attr string) bool {
+	return slices.Contains(MapIndexAttrs, attr)
+}

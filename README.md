@@ -57,11 +57,14 @@ alicloud-v2-check --fail-on module .
 |------|------|
 | `--format text\|json` | 输出格式（默认 text） |
 | `--json` | 等价于 `--format json` |
+| `--engine auto\|hcl\|regex` | 解析引擎（默认 auto） |
+| `--lang zh\|en` | 输出语言（默认按 `$LANG` 自动判定） |
 | `--exclude <glob>` | 排除路径，可重复；默认已内置 `**/.claude/**` |
 | `--fail-on none\|module\|ref\|arg\|any` | 退出码策略（默认 `any`） |
+| `--ignore-version` | 即使 provider 约束指向 v3+ 也照常扫描 |
 | `--no-color` | 关闭彩色（非 TTY 自动关闭） |
 | `--quiet` | 省略顶部类别说明图例 |
-| `--version`, `-v` | 打印版本 |
+| `--version` | 打印版本 |
 | `--help`, `-h` | 帮助 |
 
 ### 退出码
@@ -102,8 +105,33 @@ make vet
 make snapshot  # goreleaser 本地干跑（不发布）
 ```
 
+## 解析引擎（--engine）
+
+| 引擎 | 说明 |
+|------|------|
+| `hcl` | 用官方 HashiCorp HCL 解析器（`hashicorp/hcl/v2`）构建 AST 后过滤。能精确区分 `attr = {}` 与 `attr {}`，并且只把**真正的变量引用**当作 `.attr["k"]` —— 字符串 / heredoc 字面量里的同形文本不会误报，多行也正确。 |
+| `regex` | 逐行正则。对**破碎 / 不完整**的 HCL 更宽容（HCL 解析失败的文件它仍能扫）。 |
+| `auto`（默认） | 优先用 `hcl`；对无法解析的文件**逐个回退**到 `regex`。兼得精度与容错。 |
+
+示例：一段 heredoc 文档里贴了旧写法代码片段，`regex` 会误报，`hcl` 不会：
+```bash
+alicloud-v2-check --engine hcl  ./infra   # 干净
+alicloud-v2-check --engine regex ./infra  # 可能多报 heredoc 里的示例
+```
+
+## Provider 版本感知
+
+工具会读取 `terraform.required_providers.alicloud.version` 约束：
+- 约束覆盖 **v1/v2** → 适用，正常扫描。
+- 纯 **v3+** → 本次 1.x→2.0 检查不适用，**跳过并提示**（退出码 0）；用 `--ignore-version` 可强制扫描。
+- 未声明约束 → 照常扫描。
+
+## 多语言 i18n
+
+`--lang zh|en` 切换中英文报告（缺省按 `$LANG` 自动判定）。JSON 的 `message` 字段同样本地化。
+
 ## 说明
 
-- 基于行级正则的「提醒 + 定位」工具，不是完整 HCL 解析器；最终以 `terraform plan` 为准。
+- 默认 `auto` 引擎基于官方 HCL AST，精度高；`regex` 引擎是「提醒 + 定位」的兜底。最终仍以 `terraform plan` 为准。
 - registry 模块内部代码不在工作空间，无法扫描，只能通过 `source` 识别已知受影响模块。
 - 升级建议：先升到 `alicloud ~> 1.282.0` 且 `terraform plan` 无非预期变更，再升 `~> 2.0.0`，改完再跑 `terraform plan` 复核。

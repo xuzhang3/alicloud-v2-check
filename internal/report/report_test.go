@@ -51,7 +51,7 @@ func TestText_EmptyClean(t *testing.T) {
 
 func TestJSON_Shape(t *testing.T) {
 	var buf bytes.Buffer
-	if err := JSON(&buf, sample(), []string{"."}, 2); err != nil {
+	if err := JSON(&buf, sample(), []string{"."}, 2, Options{}); err != nil {
 		t.Fatal(err)
 	}
 	var r JSONReport

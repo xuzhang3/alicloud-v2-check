@@ -1,144 +1,118 @@
-# 实现计划：alicloud-v2-check（跨平台 CLI）
+# 实现计划 / 现状：alicloud-v2-check（跨平台 CLI）
+
+> 本文档已更新为**当前实现状态**（features as built）。
 
 ## 1. 目标
 
-把现有的 Python 扫描器（`.claude/skills/alicloud-provider-v2-breaking-change-check/scripts/scan.py`）
-重写为一个 **纯 CLI 工具**：单个静态二进制、零运行时依赖，可按 `os/arch` 分发到各平台。
+纯 CLI 工具：单静态二进制、可按 `os/arch` 分发。扫描 Terraform HCL，检测升级
+`aliyun/alicloud` provider `1.x → 2.0.0` 的 breaking change（本质都是属性
+`TypeMap → TypeList`），定位到 `文件:行号`。**只检查、只报告，绝不修改用户文件。**
 
-用于扫描 Terraform HCL，检测升级 `aliyun/alicloud` provider `1.x → 2.0.0` 的 breaking change
-（本质都是属性 `TypeMap → TypeList`），并定位到 `文件:行号`。**只检查、只报告，不修改用户文件。**
+## 2. 技术栈（已实现）
 
-## 2. 技术选型（已确认）
+- **语言**：Go（`CGO_ENABLED=0` 纯静态，`GOOS/GOARCH` 交叉编译）。
+- **CLI 框架**：`spf13/cobra`（真实 flag、自动 help/version、子命令预留、补全能力）。
+- **HCL 解析**：`hashicorp/hcl/v2`（`hclsyntax`）—— AST 引擎。
+- **版本约束**：`hashicorp/go-version` —— 解析 provider version constraint。
+- **分发**：GoReleaser + GitHub Actions（打 tag 自动出全平台包 + checksums + Release）。
+- 依赖已从「零第三方」演进为「少量官方/生态标准库」，但仍是纯 Go、静态、交叉编译无障碍。
 
-- **语言**：Go —— 单静态二进制，`GOOS`/`GOARCH` 一条命令交叉编译所有平台，零依赖。
-- **分发**：GoReleaser + GitHub Actions —— 打 tag 自动为所有 os/arch 产出压缩包 + `checksums.txt` + GitHub Release。
-- **功能范围**：对齐现有 Python 扫描器 **并增强**。
-- 仅用 Go 标准库（`regexp`/`flag`/`os`/`path/filepath`/`encoding/json`），不引入第三方依赖，
-  保证交叉编译干净、二进制体积小。
+## 3. 目标平台矩阵（已验证）
 
-## 3. 目标平台矩阵
+linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64、windows/arm64。
+`make build-all` 与 `goreleaser build --snapshot` 均已产出并用 `file` 校验架构。
 
-| GOOS | GOARCH | 备注 |
-|------|--------|------|
-| linux | amd64 | |
-| linux | arm64 | |
-| darwin | amd64 | Intel Mac |
-| darwin | arm64 | Apple Silicon |
-| windows | amd64 | 产物 `.exe` |
-| windows | arm64 | 可选 |
+## 4. 功能（已实现）
 
-（CGO 关闭：`CGO_ENABLED=0`，纯静态。）
+### 4.1 检测四类（file:line 定位）
+- `[ARG]`  map 赋值参数（`runtime`、`to_connect_vpc_ip_block`）→ 改 block 写法。
+- `[REF]`  `.attr["key"]` map 下标引用 → 改 `.attr[0].key`。
+- `[MODULE]` 引用已知受影响的 `terraform-alicloud-modules`（rds / rds-mysql / rds-postgres / multi-zone-infrastructure-with-ots）。
+- `[PRESENT]`（信息）出现受影响的 resource/data source。
+- 置信度：无法回溯资源类型的引用标 `[启发式/需人工确认]`（HIGH/MEDIUM）。
+- 报告顶部先打印**类别说明图例**；底部给出**官方升级指南链接**。
 
-## 4. 功能：对齐 + 增强
+### 4.2 双解析引擎（--engine auto|hcl|regex）
+- `hcl`：官方 HCL AST，精确区分 `attr = {}` vs `attr {}`；只把**真正的变量引用**当作
+  `.attr["k"]`，字符串/heredoc 字面量不会误报，多行正确。
+- `regex`：逐行正则，对破碎/不完整 HCL 更宽容。
+- `auto`（默认）：优先 HCL，**对解析失败的文件逐个回退**到 regex。
+- 两引擎在合法 testdata 上结果一致（parity 测试保证）。
 
-### 4.1 对齐现有 Python 扫描器
-- 检测四类，语义与标签完全一致：
-  - `[ARG]`  —— `runtime = {` / `to_connect_vpc_ip_block = {` 这类 map 赋值 → 改 block 写法。
-  - `[REF]`  —— `.attr["key"]` map 下标引用 → 改 `.attr[0].key`。
-  - `[MODULE]` —— 引用已知受影响的 `terraform-alicloud-modules` 模块（rds / rds-mysql / rds-postgres / multi-zone-infrastructure-with-ots）。
-  - `[PRESENT]`（信息）—— 出现受影响的 resource / data source。
-- 递归扫描 `.tf`，自动跳过 `.terraform` / `.git` / `.idea` / `.vscode` / `node_modules`。
-- 覆盖普通 HCL 与本地 module 子目录。
-- 行内注释剥离（`#` / `//`），字符串内引号成对判断，降低误报。
-- 属性引用回溯所属资源类型；无法确定时标 `[启发式/需人工确认]`（HIGH / MEDIUM 置信度）。
-- 文本报告：**顶部先打印类别说明图例**，随后逐条 `文件:行号 · 资源/模块 · 字段 · 建议 · 代码`。
-- `--json` 机器可读输出（字段：file/line/category/target/attr/confidence/message/code）。
-- 退出码：发现需处理项返回 1，干净返回 0。
+### 4.3 Provider 版本感知（v1/v2 适用，v3+ 跳过）
+- 从 `terraform.required_providers.alicloud.version`（及 legacy `provider "alicloud"`）
+  读取版本约束。
+- 约束覆盖 v1/v2 → 适用，正常扫描；纯 v3+ → 判定不适用，**跳过并给出提示**（退出码 0）。
+- `--ignore-version` 强制忽略该判定照常扫描。
+- 检测到的约束会在报告头部列出（含 file:line）。
 
-### 4.2 增强项（新增 flag）
-- `--exclude <glob>`（可重复）：排除路径，默认内置忽略 `**/.claude/**`（避免扫到 skill 自带样例）。
-- `--json` / `--format text|json`。
-- `--no-color` / 自动检测 TTY；文本报告支持彩色分级（ARG/REF/MODULE 不同色）。
-- `--fail-on none|module|ref|arg|any`：控制哪些类别影响退出码（默认 any）。
-- `--quiet`：只输出汇总与明细，省略图例。
-- `--version` / `-v`：打印版本（由 ldflags 注入）。
-- `--help` / `-h`。
-- 位置参数：一个或多个扫描路径（目录或文件），缺省为当前目录。
+### 4.4 国际化 i18n（--lang zh|en）
+- 报告全文（标题、图例、类别标题、字段标签、建议、汇总、版本提示、链接说明）均有
+  中/英两套；findings 结构与逻辑语言无关，文本在 report 层本地化。
+- 缺省从 `$LANG`/`$LC_ALL` 自动判定（zh* → 中文，否则英文）。
+- JSON 输出的 `message` 字段同样按 `--lang` 本地化。
 
-## 5. 项目结构
+### 4.5 其它 flag（cobra）
+`--format text|json`、`--json`、`--exclude <glob>`（可重复，默认内置 `**/.claude/**`）、
+`--fail-on none|module|ref|arg|any`、`--no-color`（非 TTY 自动关闭）、`--quiet`、
+`--version`、`--help`。缺省无路径参数时扫描当前工作空间。
+
+### 4.6 退出码
+- 0：无需处理项（依据 `--fail-on`）或版本判定为不适用而跳过。
+- 1：发现需处理项。
+- 2：参数非法 / 运行错误（路径不存在等）。
+
+## 5. 项目结构（现状）
 
 ```
 alicloud-v2-check/
-├── go.mod
-├── main.go                      # flag 解析、入口、退出码
+├── go.mod / go.sum
+├── main.go                      # cobra 根命令、flag、退出码；execute() 可测
+├── tty.go                       # TTY 检测（彩色自动开关）
 ├── internal/
-│   ├── rules/
-│   │   ├── rules.go             # 受影响资源/数据源/模块清单 + 属性映射（对应 Python 常量）
-│   │   └── rules_test.go
+│   ├── rules/                   # 受影响资源/数据源/模块/属性清单 + 判定
 │   ├── scanner/
-│   │   ├── scanner.go           # 遍历文件、逐行匹配、生成 findings
-│   │   └── scanner_test.go
-│   └── report/
-│       ├── report.go            # 文本图例 + 明细 + JSON 输出
-│       └── report_test.go
-├── testdata/                    # 从现有 examples/ 移植的 fixtures（含 negative/mixed/clean）
-│   ├── plain-hcl/...
-│   ├── modules/...
-│   └── ...
-├── .goreleaser.yaml             # 交叉编译矩阵、archive、checksums、release
-├── .github/workflows/release.yml# push tag 触发 goreleaser
-├── Makefile                     # build / build-all / test / lint / clean
-├── README.md                    # 安装、用法、平台矩阵、退出码
-└── docs/
-    └── PLAN.md                  # 本文件
+│   │   ├── scanner.go           # 引擎选择、文件遍历、regex 引擎、Finding 结构
+│   │   ├── hcl.go               # HCL AST 引擎
+│   │   ├── scanner_test.go / hcl_test.go / integration_test.go
+│   ├── report/
+│   │   ├── report.go            # 文本/JSON 渲染、退出码策略、版本提示
+│   │   ├── i18n.go              # zh/en 文案与本地化
+│   │   └── report_test.go
+│   └── tfversion/               # provider 版本约束检测 + 适用性判定 + 测试
+├── testdata/                    # resources/datasources/modules/clean fixtures
+├── .goreleaser.yaml / .github/workflows/{ci,release}.yml
+├── Makefile / README.md / LICENSE
+└── docs/PLAN.md
 ```
 
-## 6. 核心实现要点（从 Python 移植）
+## 6. 构建与分发
 
-- `rules.go`：
-  - `AffectedResources map[string][]string`、`AffectedDataSources map[string][]string`
-  - `BlockArgAttrs`（runtime, to_connect_vpc_ip_block）
-  - `MapIndexAttrs`（domain_list, certificate_authority, connections, runtime, to_connect_vpc_ip_block, storage_range, gpu, burstable_instance, local_storage）
-  - `AffectedModules`（4 个）
-- `scanner.go`：预编译正则
-  - `reBlockArg = ^\s*(runtime|to_connect_vpc_ip_block)\s*=\s*\{`
-  - `reMapIndex = \.(<attrs>)\s*\[\s*"([^"]+)"\s*\]`
-  - `reResourceDecl` / `reDataDecl` / `reSource` / `reTypeToken`
-  - 维护当前所在 resource/data 块类型以判定 ARG 置信度；REF 回溯行内 `alicloud_*` token 判 HIGH/MEDIUM。
-- `report.go`：文本图例常量 + 分类别分组输出 + JSON 序列化；退出码依据 `--fail-on`。
-- 版本注入：`-ldflags "-X main.version=$(git describe --tags)"`。
+- `make build` / `make build-all`（6 平台交叉编译到 dist/）。
+- `.goreleaser.yaml`：`CGO_ENABLED=0`，goos×goarch 矩阵，tar.gz/zip，sha256 checksums，ldflags 注入版本。
+- `.github/workflows/release.yml`：push `v*` tag → GoReleaser 自动发布；`ci.yml`：vet+test+gofmt 门禁。
+- 版本 tag：当前 `v0.0.1`。
 
-## 7. 构建与分发
+## 7. 测试（现状：全绿）
 
-### Makefile（本地）
-- `make build`：当前平台。
-- `make build-all`：遍历平台矩阵，输出到 `dist/alicloud-v2-check_<os>_<arch>[.exe]`。
-- `make test` / `make clean`。
+- `rules`：清单计数与判定。
+- `scanner`：四类检测、负向用例、格式变体、exclude/dedup。
+- `hcl`：heredoc 不误报、插值命中、解析错误 sentinel、auto 回退、hcl 跳过、**双引擎 parity**。
+- `report`：图例/文件行、quiet、JSON 结构、退出码/`--fail-on`。
+- `tfversion`：约束分类（v1/v2/v3）、required_providers 检测、缺省无约束。
+- `main`（CLI）：help/version、JSON 退出码、fail-on、zh/en 输出、quiet、**版本 gating（v3 跳过 / --ignore-version 扫描）**。
 
-### GoReleaser（`.goreleaser.yaml`）
-- `builds`：`CGO_ENABLED=0`，goos/goarch 矩阵（排除 windows/arm64 视需要）。
-- `archives`：tar.gz（*nix）/ zip（windows），命名 `{{.ProjectName}}_{{.Os}}_{{.Arch}}`。
-- `checksum`：`checksums.txt`（sha256）。
-- ldflags 注入 version/commit/date。
+## 8. 验收标准（已满足）
 
-### GitHub Actions（`.github/workflows/release.yml`）
-- 触发：`push` tag `v*`。
-- 步骤：checkout → setup-go → `goreleaser release --clean`（用 `GITHUB_TOKEN`）。
+- `go build`/`go vet`/`gofmt` 干净；`go test ./...` 全绿。
+- testdata 双引擎结果一致：ARG=3 / REF=9 / MODULE=4 / PRESENT=8。
+- 6 平台交叉编译产物架构正确。
+- `--engine` / `--lang` / `--fail-on` / `--ignore-version` / `--exclude` 行为符合文档。
+- 全程只读，不写用户 `.tf`。
 
-## 8. 测试
+## 9. 后续可选项（未做）
 
-- `go test ./...`：
-  - rules/scanner：对 `testdata/` 断言每类命中数量、file:line、置信度。
-  - 负向用例（already-v2 / 注释 / 无关 map 下标）断言 0 actionable。
-  - report：JSON 结构、退出码逻辑、`--fail-on` 行为。
-- 复用现有 skill 的 `examples/` fixtures 作为 `testdata/` 基线，结果与 Python 版对齐（24 处 for examples 集合）。
-
-## 9. 里程碑
-
-1. `go mod init` + `rules.go`（清单常量）+ 单测。
-2. `scanner.go`（正则 + 遍历 + findings）+ 单测（对齐 Python 命中）。
-3. `report.go`（文本图例/明细 + JSON + 退出码/`--fail-on`）+ 单测。
-4. `main.go`（flag：paths/--json/--exclude/--no-color/--fail-on/--quiet/--version）。
-5. `Makefile` + 本地 `build-all` 验证 6 个平台产物可生成。
-6. `.goreleaser.yaml` + `release.yml` + `README.md`。
-7. `goreleaser build --snapshot --clean` 本地干跑验证矩阵。
-
-## 10. 验收标准
-
-- `go build` 干净，无第三方依赖。
-- 对 `workspace/example1..6` 扫描结果与 Python 版一致（ARG3 / REF17 / MODULE4 / PRESENT12）。
-- `make build-all` 产出全部目标平台二进制；`file` 校验架构正确。
-- `goreleaser build --snapshot` 成功产出归档 + checksums。
-- `--help` / `--version` / `--json` / `--exclude` / `--fail-on` 行为符合文档。
-- 全程「只读」：工具绝不写用户的 `.tf`。
-```
+- Homebrew tap / `install.sh` 一键安装。
+- 子命令（如 `fix` 预览 diff —— 但需保持只读默认）。
+- 更多受影响资源随官方指南更新。
+- SARIF 输出以接入代码扫描平台。

@@ -5,6 +5,7 @@ package scanner
 
 import (
 	"bufio"
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -32,15 +33,18 @@ const (
 	Medium Confidence = "MEDIUM"
 )
 
-// Finding is one detected item.
+// Finding is one detected item. Human-readable text (Message) is filled in by
+// the report layer so it can be localized; the scanner only produces the
+// structured fields below.
 type Finding struct {
 	File       string     `json:"file"`
 	Line       int        `json:"line"`
 	Category   Category   `json:"category"`
 	Target     string     `json:"target"` // resource/data type, or module source
-	Attr       string     `json:"attr"`
+	Attr       string     `json:"attr"`   // attr name (ARG/REF) or comma-joined fields (PRESENT)
+	Key        string     `json:"key,omitempty"`
 	Confidence Confidence `json:"confidence"`
-	Message    string     `json:"message"`
+	Message    string     `json:"message,omitempty"` // localized by report layer
 	Code       string     `json:"code"`
 }
 
@@ -56,37 +60,92 @@ var (
 	reTypeToken    = regexp.MustCompile(`(data\.)?(alicloud_[a-z0-9_]+)`)
 )
 
+// Engine selects the parsing backend.
+type Engine string
+
+const (
+	// EngineAuto uses the HCL AST parser, falling back to regex per-file when
+	// a file cannot be parsed (broken/partial HCL). This is the default.
+	EngineAuto Engine = "auto"
+	// EngineHCL uses only the HCL AST parser; unparseable files are skipped.
+	EngineHCL Engine = "hcl"
+	// EngineRegex uses only the line-based regex scanner.
+	EngineRegex Engine = "regex"
+)
+
 // Options controls a scan.
 type Options struct {
 	// Excludes are filepath.Match-style patterns (matched against each path
 	// and its base name); matching paths are skipped.
 	Excludes []string
+	// Engine selects the backend (default EngineAuto).
+	Engine Engine
+}
+
+// CollectFiles returns the de-duplicated list of .tf files under paths,
+// honoring excludes and skip-dirs.
+func CollectFiles(paths []string, opts Options) ([]string, error) {
+	var files []string
+	seen := map[string]bool{}
+	for _, root := range paths {
+		fs, err := collectTFFiles(root, opts)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range fs {
+			if !seen[f] {
+				seen[f] = true
+				files = append(files, f)
+			}
+		}
+	}
+	return files, nil
+}
+
+// ScanFiles scans an explicit list of files with the given engine.
+func ScanFiles(files []string, engine Engine) ([]Finding, error) {
+	if engine == "" {
+		engine = EngineAuto
+	}
+	var findings []Finding
+	for _, f := range files {
+		fs, err := scanOne(f, engine)
+		if err != nil {
+			return nil, err
+		}
+		findings = append(findings, fs...)
+	}
+	return findings, nil
 }
 
 // ScanPaths scans every path (file or dir), de-duplicating files.
 func ScanPaths(paths []string, opts Options) ([]Finding, int, error) {
-	var findings []Finding
-	seen := map[string]bool{}
-	count := 0
-	for _, root := range paths {
-		files, err := collectTFFiles(root, opts)
-		if err != nil {
-			return nil, count, err
-		}
-		for _, f := range files {
-			if seen[f] {
-				continue
-			}
-			seen[f] = true
-			count++
-			fs, err := ScanFile(f)
-			if err != nil {
-				return nil, count, err
-			}
-			findings = append(findings, fs...)
-		}
+	files, err := CollectFiles(paths, opts)
+	if err != nil {
+		return nil, 0, err
 	}
-	return findings, count, nil
+	findings, err := ScanFiles(files, opts.Engine)
+	return findings, len(files), err
+}
+
+// scanOne dispatches a single file to the selected engine.
+func scanOne(path string, engine Engine) ([]Finding, error) {
+	switch engine {
+	case EngineRegex:
+		return ScanFile(path)
+	case EngineHCL:
+		fs, err := ScanFileHCL(path)
+		if errors.Is(err, ErrParse) {
+			return nil, nil // skip unparseable file
+		}
+		return fs, err
+	default: // auto
+		fs, err := ScanFileHCL(path)
+		if errors.Is(err, ErrParse) {
+			return ScanFile(path) // fall back to regex
+		}
+		return fs, err
+	}
 }
 
 func collectTFFiles(root string, opts Options) ([]string, error) {
@@ -194,9 +253,7 @@ func ScanFile(path string) ([]Finding, error) {
 			}
 			findings = append(findings, Finding{
 				File: path, Line: lineNo, Category: ARG, Target: currentType,
-				Attr: attr, Confidence: conf,
-				Message: "map 赋值 `" + attr + " = {` 需改为 block 写法 `" + attr + " { ... }`",
-				Code:    raw,
+				Attr: attr, Confidence: conf, Code: raw,
 			})
 		}
 
@@ -212,9 +269,7 @@ func ScanFile(path string) ([]Finding, error) {
 			}
 			findings = append(findings, Finding{
 				File: path, Line: lineNo, Category: REF, Target: refType,
-				Attr: attr, Confidence: conf,
-				Message: "`." + attr + `["` + key + `"]` + "` 需改为 `." + attr + "[0]." + key + "`",
-				Code:    raw,
+				Attr: attr, Key: key, Confidence: conf, Code: raw,
 			})
 		}
 
@@ -224,9 +279,7 @@ func ScanFile(path string) ([]Finding, error) {
 			if rules.IsAffectedModule(base) {
 				findings = append(findings, Finding{
 					File: path, Line: lineNo, Category: MODULE, Target: base,
-					Confidence: High,
-					Message:    "该模块内部使用受影响资源，请升级到兼容 v2 的模块版本并核对其 output 引用",
-					Code:       raw,
+					Confidence: High, Code: raw,
 				})
 			}
 		}
@@ -237,13 +290,10 @@ func ScanFile(path string) ([]Finding, error) {
 	return findings, nil
 }
 
-func present(path string, line int, typ, raw string, attrs []string, kind string) Finding {
-	fields := strings.Join(attrs, ", ")
+func present(path string, line int, typ, raw string, attrs []string, _ string) Finding {
 	return Finding{
 		File: path, Line: line, Category: PRESENT, Target: typ,
-		Attr: fields, Confidence: High,
-		Message: "受影响 " + kind + "，升级后请核对其 map->list 属性: " + fields,
-		Code:    raw,
+		Attr: strings.Join(attrs, ", "), Confidence: High, Code: raw,
 	}
 }
 
