@@ -137,6 +137,85 @@ func TestCLI_OutputToFile(t *testing.T) {
 	}
 }
 
+func TestCLI_Engines(t *testing.T) {
+	for _, eng := range []string{"auto", "hcl", "regex"} {
+		out, _, code := runArgs("--engine", eng, "--json", "testdata")
+		if code != 1 {
+			t.Errorf("engine %s exit=%d want 1", eng, code)
+		}
+		if !strings.Contains(out, `"actionable_count": 16`) {
+			t.Errorf("engine %s: expected actionable_count 16", eng)
+		}
+	}
+}
+
+func TestCLI_BadEngine(t *testing.T) {
+	if _, _, code := runArgs("--engine", "bogus", "testdata"); code != 2 {
+		t.Errorf("bad --engine exit=%d want 2", code)
+	}
+}
+
+func TestCLI_BadFormat(t *testing.T) {
+	if _, _, code := runArgs("--format", "xml", "testdata"); code != 2 {
+		t.Errorf("bad --format exit=%d want 2", code)
+	}
+}
+
+func TestCLI_BadLang(t *testing.T) {
+	if _, _, code := runArgs("--lang", "fr", "testdata"); code != 2 {
+		t.Errorf("bad --lang exit=%d want 2", code)
+	}
+}
+
+func TestCLI_MarkdownAlias(t *testing.T) {
+	out, _, _ := runArgs("--format", "md", "--lang", "en", "testdata/modules")
+	if !strings.Contains(out, "| File | Module | Fix |") {
+		t.Errorf("md alias should render markdown:\n%s", out)
+	}
+}
+
+func TestCLI_Exclude(t *testing.T) {
+	// excluding the modules subdir drops the 4 MODULE findings
+	out, _, _ := runArgs("--json", "--exclude", "**/modules/**", "testdata")
+	if strings.Contains(out, `"category": "MODULE"`) {
+		t.Error("excluded modules dir should yield no MODULE findings")
+	}
+}
+
+func TestCLI_FailOnArgAndRef(t *testing.T) {
+	// datasources has REF but no ARG
+	if _, _, code := runArgs("--fail-on", "arg", "testdata/datasources"); code != 0 {
+		t.Errorf("--fail-on arg on REF-only should be 0, got %d", code)
+	}
+	if _, _, code := runArgs("--fail-on", "ref", "testdata/datasources"); code != 1 {
+		t.Errorf("--fail-on ref on REF should be 1, got %d", code)
+	}
+}
+
+func TestCLI_AutoLangFromEnv(t *testing.T) {
+	t.Setenv("LANG", "zh_CN.UTF-8")
+	t.Setenv("LC_ALL", "")
+	out, _, _ := runArgs("--no-color", "testdata/modules") // no --lang -> auto
+	if !strings.Contains(out, "模块:") {
+		t.Errorf("auto-lang from $LANG=zh should render Chinese:\n%s", out)
+	}
+}
+
+func TestCLI_TextToFile(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "r.txt")
+	if _, _, code := runArgs("--lang", "en", "-o", fp, "testdata/clean"); code != 0 {
+		t.Errorf("clean text to file exit=%d want 0", code)
+	}
+	data, err := os.ReadFile(fp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "No affected resources") {
+		t.Errorf("clean file content unexpected:\n%s", data)
+	}
+}
+
 func TestCLI_QuietOmitsLegend(t *testing.T) {
 	out, _, _ := runArgs("--lang", "zh", "--quiet", "--no-color", "testdata/modules")
 	if strings.Contains(out, "【类别说明】") {

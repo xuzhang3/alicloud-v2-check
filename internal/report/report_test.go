@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/aliyun/alicloud-v2-check/internal/scanner"
+	"github.com/aliyun/alicloud-v2-check/internal/tfversion"
 )
 
 func sample() []scanner.Finding {
@@ -70,6 +71,84 @@ func TestJSON_Shape(t *testing.T) {
 	// ensure non-escaped output for readability
 	if strings.Contains(buf.String(), `\u`) {
 		t.Error("JSON should not HTML/unicode-escape")
+	}
+}
+
+func TestMarkdown_TablesAndClean(t *testing.T) {
+	var buf bytes.Buffer
+	Markdown(&buf, sample(), Options{Roots: []string{"."}, Lang: LangEN})
+	out := buf.String()
+	if !strings.Contains(out, "# Alicloud Provider v2 Breaking Change Report") {
+		t.Error("md title missing")
+	}
+	if !strings.Contains(out, "| File | Resource | Field | Fix |") {
+		t.Error("md ARG/REF table header missing")
+	}
+	if !strings.Contains(out, "| File | Module | Fix |") {
+		t.Error("md MODULE table header missing")
+	}
+	// clean case
+	var cb bytes.Buffer
+	Markdown(&cb, nil, Options{Roots: []string{"."}, Lang: LangEN})
+	if !strings.Contains(cb.String(), "No affected resources") {
+		t.Error("md clean message missing")
+	}
+}
+
+func TestMarkdown_PipeEscaping(t *testing.T) {
+	f := []scanner.Finding{{File: "a.tf", Line: 1, Category: scanner.REF, Target: "alicloud_x", Attr: "connections", Key: "a|b", Confidence: scanner.High}}
+	var buf bytes.Buffer
+	Markdown(&buf, f, Options{Roots: []string{"."}, Lang: LangEN})
+	if strings.Contains(buf.String(), "a|b\"]`") { // raw pipe would break the table
+		t.Error("pipe in key should be escaped in markdown cell")
+	}
+}
+
+func TestVersionNote(t *testing.T) {
+	v3 := tfversion.Verdict{
+		Constraints: []tfversion.Constraint{{File: "v.tf", Line: 5, Raw: "~> 3.0"}},
+		OnlyV3Plus:  true,
+	}
+	if got := VersionNote(v3, LangEN, false); !strings.Contains(got, "v3") {
+		t.Errorf("en v3 note missing v3 mention: %q", got)
+	}
+	if got := VersionNote(v3, LangZH, false); !strings.Contains(got, "v3") {
+		t.Errorf("zh v3 note missing: %q", got)
+	}
+	if got := VersionNote(v3, LangEN, true); !strings.Contains(got, "ignore-version") {
+		t.Errorf("override note missing: %q", got)
+	}
+	v1 := tfversion.Verdict{
+		Constraints: []tfversion.Constraint{{File: "v.tf", Line: 5, Raw: "~> 1.230"}},
+		AppliesV2:   true,
+	}
+	if got := VersionNote(v1, LangEN, false); !strings.Contains(got, "scope") {
+		t.Errorf("relevant note missing: %q", got)
+	}
+	if got := VersionNote(tfversion.Verdict{}, LangEN, false); got != "" {
+		t.Errorf("no constraints should yield empty note, got %q", got)
+	}
+}
+
+func TestJSON_LocalizedMessageEN(t *testing.T) {
+	var buf bytes.Buffer
+	if err := JSON(&buf, sample(), []string{"."}, 1, Options{Lang: LangEN}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "must become block syntax") {
+		t.Error("JSON message should be localized to EN")
+	}
+}
+
+func TestAutoLang(t *testing.T) {
+	if autoLang("zh_CN.UTF-8") != LangZH {
+		t.Error("zh_CN should map to zh")
+	}
+	if autoLang("en_US.UTF-8") != LangEN {
+		t.Error("en_US should map to en")
+	}
+	if autoLang("") != LangEN {
+		t.Error("empty should default to en")
 	}
 }
 
