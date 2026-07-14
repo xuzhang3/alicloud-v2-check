@@ -47,8 +47,8 @@ func TestCLI_ScanTestdata_ExitAndSummary(t *testing.T) {
 	if code != 1 {
 		t.Errorf("exit=%d want 1 (findings present)", code)
 	}
-	if !strings.Contains(out, "16 to fix") {
-		t.Errorf("expected 16 actionable in summary, got:\n%s", out)
+	if !strings.Contains(out, "52 to fix") {
+		t.Errorf("expected 52 actionable in summary, got:\n%s", out)
 	}
 }
 
@@ -143,8 +143,8 @@ func TestCLI_Engines(t *testing.T) {
 		if code != 1 {
 			t.Errorf("engine %s exit=%d want 1", eng, code)
 		}
-		if !strings.Contains(out, "16 to fix") {
-			t.Errorf("engine %s: expected 16 actionable in summary", eng)
+		if !strings.Contains(out, "52 to fix") {
+			t.Errorf("engine %s: expected 52 actionable in summary", eng)
 		}
 	}
 }
@@ -175,8 +175,8 @@ func TestCLI_MarkdownAlias(t *testing.T) {
 }
 
 func TestCLI_Exclude(t *testing.T) {
-	// excluding the modules subdir drops the 4 MODULE findings
-	out, _, _ := runArgs("--format", "text", "--lang", "en", "--no-color", "--exclude", "**/modules/**", "testdata")
+	// excluding the modules subdir drops MODULE findings from testdata/modules
+	out, _, _ := runArgs("--format", "text", "--lang", "en", "--no-color", "--exclude", "**/modules/**", "testdata/modules")
 	if strings.Contains(out, "[MODULE]") {
 		t.Error("excluded modules dir should yield no MODULE findings")
 	}

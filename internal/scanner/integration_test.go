@@ -13,7 +13,7 @@ func TestParity_Testdata(t *testing.T) {
 		t.Fatal("no files scanned")
 	}
 	c := counts(fs)
-	want := map[Category]int{ARG: 3, REF: 9, MODULE: 4, PRESENT: 8}
+	want := map[Category]int{ARG: 7, REF: 37, MODULE: 8, PRESENT: 25}
 	for cat, w := range want {
 		if c[cat] != w {
 			t.Errorf("%s = %d, want %d", cat, c[cat], w)

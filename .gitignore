@@ -1,2 +1,4 @@
 /bin/
 /dist/
+.terraform/
+.terraform.lock.hcl

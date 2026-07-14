@@ -139,8 +139,7 @@ func runScan(f *flags, paths []string, stdout io.Writer, exitCode *int) error {
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
-	excludes := append([]string{"**/.claude/**"}, f.excludes...)
-	opts := scanner.Options{Excludes: excludes, Engine: eng}
+	opts := scanner.Options{Excludes: f.excludes, Engine: eng}
 
 	files, err := scanner.CollectFiles(paths, opts)
 	if err != nil {

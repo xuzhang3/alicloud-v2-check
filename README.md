@@ -52,7 +52,7 @@ alicloud-v2-check --exclude '**/vendor/**' --exclude examples .
 alicloud-v2-check --fail-on module .
 ```
 
-不带任何路径参数时，**默认扫描当前目录（整个工作空间）**，并自动排除 `**/.claude/**`、`testdata`、`.terraform`、`.git` 等目录。
+不带任何路径参数时，**默认扫描当前目录（整个工作空间）**，并自动排除 `.terraform`、`.git`、`.idea`、`.vscode`、`node_modules` 等目录。
 
 ### 选项
 
@@ -62,7 +62,7 @@ alicloud-v2-check --fail-on module .
 | `--output`, `-o <file>` | 写入文件而非 stdout |
 | `--engine auto\|hcl\|regex` | 解析引擎（默认 auto） |
 | `--lang zh\|en` | 输出语言（默认按 `$LANG` 自动判定） |
-| `--exclude <glob>` | 排除路径，可重复；默认已内置 `**/.claude/**` |
+| `--exclude <glob>` | 排除路径，可重复 |
 | `--fail-on none\|module\|ref\|arg\|any` | 退出码策略（默认 `any`） |
 | `--group-by category\|resource` | 报告分组方式（默认 resource）；resource 按资源名归类 |
 | `--ignore-version` | 即使 provider 约束指向 v3+ 也照常扫描 |
@@ -137,4 +137,4 @@ alicloud-v2-check --engine regex ./infra  # 可能多报 heredoc 里的示例
 
 - 默认 `auto` 引擎基于官方 HCL AST，精度高；`regex` 引擎是「提醒 + 定位」的兜底。最终仍以 `terraform plan` 为准。
 - registry 模块内部代码不在工作空间，无法扫描，只能通过 `source` 识别已知受影响模块。
-- 升级建议：先升到 `alicloud ~> 1.282.0` 且 `terraform plan` 无非预期变更，再升 `~> 2.0.0`，改完再跑 `terraform plan` 复核。
+- 升级建议：先升到 v1 最新版本， 如 `v1.286.0` 且 `terraform plan` 无非预期变更，再升 `~> 2.0.0`，改完再跑 `terraform plan` 复核。
