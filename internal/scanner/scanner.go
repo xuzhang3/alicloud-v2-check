@@ -159,13 +159,17 @@ func collectTFFiles(root string, opts Options) ([]string, error) {
 		}
 		return nil, nil
 	}
+	absRoot, _ := filepath.Abs(root)
 	var files []string
 	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if rules.SkipDirs[d.Name()] || excluded(path, opts) {
+			// Never skip the root path itself, even if its name matches SkipDirs.
+			absPath, _ := filepath.Abs(path)
+			isRoot := absPath == absRoot
+			if !isRoot && (rules.SkipDirs[d.Name()] || excluded(path, opts)) {
 				return filepath.SkipDir
 			}
 			return nil

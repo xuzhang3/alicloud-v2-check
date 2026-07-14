@@ -113,3 +113,150 @@ func TestEngineParity_Testdata(t *testing.T) {
 		}
 	}
 }
+
+// HCL engine must detect .attr["key"] after a dynamic index ([count.index]),
+// which Variables() cannot see because it truncates the traversal.
+func TestHCL_DynamicCountIndex(t *testing.T) {
+	dir := t.TempDir()
+	p := write(t, dir, "count.tf", `
+resource "alicloud_cs_kubernetes" "multi" {
+  count   = 3
+  name    = "multi-${count.index}"
+  runtime = {
+    name = "containerd"
+  }
+}
+
+output "conn" {
+  value = alicloud_cs_kubernetes.multi[count.index].connections["api_server_internet"]
+}
+`)
+	hfs, err := ScanFileHCL(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := counts(hfs)
+	if c[REF] != 1 {
+		t.Errorf("HCL should detect [count.index] REF, got %d REF (findings: %+v)", c[REF], hfs)
+	}
+	if c[ARG] != 1 {
+		t.Errorf("HCL should detect ARG inside counted resource, got %d ARG", c[ARG])
+	}
+	if c[PRESENT] != 1 {
+		t.Errorf("HCL should detect PRESENT for counted resource, got %d PRESENT", c[PRESENT])
+	}
+}
+
+// HCL engine must detect .attr["key"] after a splat expression ([*]).
+func TestHCL_SplatExpression(t *testing.T) {
+	dir := t.TempDir()
+	p := write(t, dir, "splat.tf", `
+resource "alicloud_cs_kubernetes" "multi" {
+  count = 3
+  name  = "m"
+}
+
+output "all_conn" {
+  value = alicloud_cs_kubernetes.multi[*].connections["api_server_internet"]
+}
+`)
+	hfs, err := ScanFileHCL(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := counts(hfs)
+	if c[REF] != 1 {
+		t.Errorf("HCL should detect splat [*] REF, got %d REF", c[REF])
+	}
+}
+
+// All three count indexing patterns (literal [0], dynamic [count.index],
+// splat [*]) must be detected by both engines with the same counts.
+func TestHCL_CountIndexParity(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "all.tf", `
+resource "alicloud_cs_kubernetes" "k" {
+  count = 3
+  name  = "k"
+}
+
+output "literal" {
+  value = alicloud_cs_kubernetes.k[0].connections["api_server_internet"]
+}
+
+output "dynamic" {
+  value = alicloud_cs_kubernetes.k[count.index].connections["api_server_internet"]
+}
+
+output "splat" {
+  value = alicloud_cs_kubernetes.k[*].connections["api_server_internet"]
+}
+`)
+	hfs, _, err := ScanPaths([]string{dir}, Options{Engine: EngineHCL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rfs, _, err := ScanPaths([]string{dir}, Options{Engine: EngineRegex})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hc, rc := counts(hfs), counts(rfs)
+	if hc[REF] != 3 {
+		t.Errorf("HCL should find 3 REF (literal+dynamic+splat), got %d", hc[REF])
+	}
+	if rc[REF] != 3 {
+		t.Errorf("regex should find 3 REF, got %d", rc[REF])
+	}
+}
+
+// for_each resources use ["key"] indexing; both engines must detect the REF.
+func TestHCL_ForEachIndex(t *testing.T) {
+	dir := t.TempDir()
+	p := write(t, dir, "each.tf", `
+resource "alicloud_cr_repo" "repos" {
+  for_each  = toset(["a", "b"])
+  namespace = "ns"
+  name      = each.value
+  summary   = "s"
+}
+
+output "domain" {
+  value = alicloud_cr_repo.repos["a"].domain_list["vpc"]
+}
+`)
+	hfs, err := ScanFileHCL(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts(hfs)[REF] != 1 {
+		t.Errorf("HCL should detect for_each REF, got %d REF", counts(hfs)[REF])
+	}
+}
+
+// Ternary conditional referencing a counted resource must be detected.
+func TestHCL_ConditionalCountRef(t *testing.T) {
+	dir := t.TempDir()
+	p := write(t, dir, "cond.tf", `
+variable "enabled" { default = true }
+
+resource "alicloud_cs_managed_kubernetes" "cond" {
+  count = var.enabled ? 1 : 0
+  name  = "cond"
+}
+
+output "conn" {
+  value = var.enabled ? alicloud_cs_managed_kubernetes.cond[0].connections["api_server_internet"] : null
+}
+`)
+	hfs, err := ScanFileHCL(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := counts(hfs)
+	if c[REF] != 1 {
+		t.Errorf("HCL should detect conditional count REF, got %d REF", c[REF])
+	}
+	if c[PRESENT] != 1 {
+		t.Errorf("HCL should detect PRESENT for conditional resource, got %d", c[PRESENT])
+	}
+}

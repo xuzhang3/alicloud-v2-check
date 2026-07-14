@@ -32,7 +32,6 @@ func main() {
 
 type flags struct {
 	format        string
-	json          bool
 	output        string
 	engine        string
 	excludes      []string
@@ -41,8 +40,6 @@ type flags struct {
 	lang          string
 	ignoreVersion bool
 	noColor       bool
-	quiet         bool
-	tree          bool
 }
 
 // execute builds and runs the root command, returning the process exit code.
@@ -67,10 +64,10 @@ func newRootCmd(exitCode *int, stdout io.Writer) *cobra.Command {
 		Short: "Scan Terraform HCL for aliyun/alicloud provider v2 breaking changes",
 		Long: "扫描 Terraform HCL，找出升级 aliyun/alicloud provider 1.x → 2.0.0 的 breaking change，并定位到 文件:行号。\n" +
 			"Scan Terraform HCL for aliyun/alicloud provider 1.x → 2.0.0 breaking changes, located by file:line.\n\n" +
-			"只检查、只报告，绝不修改文件 / Read-only: reports problems, never edits files.",
+			"只检查、只报告，不修改文件 / Read-only: reports problems, never edits files.",
 		Args:          cobra.ArbitraryArgs,
 		Version:       fmt.Sprintf("%s (commit %s, built %s)", version, commit, date),
-		SilenceUsage:  true,
+		SilenceUsage:  false,
 		SilenceErrors: false,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runScan(f, args, stdout, exitCode)
@@ -78,18 +75,15 @@ func newRootCmd(exitCode *int, stdout io.Writer) *cobra.Command {
 	}
 
 	fl := cmd.Flags()
-	fl.StringVar(&f.format, "format", "text", "output format: text|json|markdown")
-	fl.BoolVar(&f.json, "json", false, "shorthand for --format json")
+	fl.StringVar(&f.format, "format", "markdown", "output format: text|markdown")
 	fl.StringVarP(&f.output, "output", "o", "", "write report to a file instead of stdout")
 	fl.StringVar(&f.engine, "engine", "auto", "parser engine: auto|hcl|regex")
-	fl.StringArrayVar(&f.excludes, "exclude", nil, "exclude path glob (repeatable); **/.claude/** always excluded")
+	fl.StringArrayVar(&f.excludes, "exclude", nil, "exclude path glob (repeatable)")
 	fl.StringVar(&f.failOn, "fail-on", "any", "exit-code policy: none|module|ref|arg|any")
-	fl.StringVar(&f.groupBy, "group-by", "category", "group findings by: category|resource")
+	fl.StringVar(&f.groupBy, "group-by", "resource", "group findings by: category|resource")
 	fl.StringVar(&f.lang, "lang", "", "language: zh|en (default: auto from $LANG)")
 	fl.BoolVar(&f.ignoreVersion, "ignore-version", false, "scan even if the provider constraint targets v3+")
 	fl.BoolVar(&f.noColor, "no-color", false, "disable colored output")
-	fl.BoolVar(&f.quiet, "quiet", false, "omit the category legend")
-	fl.BoolVar(&f.tree, "tree", false, "print scanned workspace as a tree (text/markdown only)")
 
 	cmd.SetVersionTemplate("alicloud-v2-check {{.Version}}\n")
 	return cmd
@@ -98,16 +92,13 @@ func newRootCmd(exitCode *int, stdout io.Writer) *cobra.Command {
 func runScan(f *flags, paths []string, stdout io.Writer, exitCode *int) error {
 	// resolve & validate flags
 	format := f.format
-	if f.json {
-		format = "json"
-	}
 	switch format {
-	case "text", "json", "markdown", "md":
+	case "text", "markdown", "md":
 		if format == "md" {
 			format = "markdown"
 		}
 	default:
-		return fmt.Errorf("--format must be text|json|markdown (got %q)", format)
+		return fmt.Errorf("--format must be text|markdown (got %q)", format)
 	}
 
 	eng := scanner.Engine(f.engine)
@@ -182,28 +173,19 @@ func runScan(f *flags, paths []string, stdout io.Writer, exitCode *int) error {
 	ropts := report.Options{
 		Roots:       paths,
 		Color:       f.output == "" && !f.noColor && isTerminalWriter(stdout),
-		Quiet:       f.quiet,
 		Lang:        lang,
 		GroupBy:     groupBy,
 		VersionNote: note,
 	}
 	switch format {
-	case "json":
-		if err := report.JSON(w, findings, paths, len(files), ropts); err != nil {
-			return err
-		}
 	case "markdown":
-		if f.tree {
-			fmt.Fprint(w, "```\n")
-			report.Tree(w, files, findings, ropts)
-			fmt.Fprint(w, "```\n")
-		}
+		fmt.Fprint(w, "```\n")
+		report.Tree(w, files, findings, ropts, true)
+		fmt.Fprint(w, "```\n\n")
 		report.Markdown(w, findings, ropts)
 	default:
-		if f.tree {
-			report.Tree(w, files, findings, ropts)
-			fmt.Fprintln(w)
-		}
+		report.Tree(w, files, findings, ropts, false)
+		fmt.Fprintln(w)
 		report.Text(w, findings, ropts)
 	}
 

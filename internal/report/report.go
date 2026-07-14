@@ -1,9 +1,8 @@
-// Package report renders scanner findings as text or JSON and computes the
+// Package report renders scanner findings as text or Markdown and computes the
 // process exit code.
 package report
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -90,7 +89,6 @@ const (
 type Options struct {
 	Roots   []string
 	Color   bool
-	Quiet   bool    // omit the legend
 	Lang    Lang    // output language (default zh)
 	GroupBy GroupBy // grouping mode (default category)
 	// VersionNote, if set, is printed near the top (provider-version gating).
@@ -179,13 +177,11 @@ func Text(w io.Writer, findings []scanner.Finding, opts Options) {
 		return
 	}
 
-	if !opts.Quiet {
-		fmt.Fprintln(w, "\n"+bd.legendHead)
-		for _, cat := range order {
-			fmt.Fprintf(w, "  [%-7s] %s\n", cat, bd.legend[cat])
-		}
-		fmt.Fprintln(w, bd.heuristic)
+	fmt.Fprintln(w, "\n"+bd.legendHead)
+	for _, cat := range order {
+		fmt.Fprintf(w, "  [%-7s] %s\n", cat, bd.legend[cat])
 	}
+	fmt.Fprintln(w, bd.heuristic)
 
 	if opts.GroupBy == GroupByResource {
 		for _, g := range groupByResource(findings, bd) {
@@ -242,11 +238,9 @@ func Markdown(w io.Writer, findings []scanner.Finding, opts Options) {
 		return
 	}
 
-	if !opts.Quiet {
-		fmt.Fprintf(w, "\n## %s\n\n", strings.Trim(bd.legendHead, "【】:："))
-		for _, cat := range order {
-			fmt.Fprintf(w, "- **%s** — %s\n", cat, bd.legend[cat])
-		}
+	fmt.Fprintf(w, "\n## %s\n\n", strings.Trim(bd.legendHead, "【】:："))
+	for _, cat := range order {
+		fmt.Fprintf(w, "- **%s** — %s\n", cat, bd.legend[cat])
 	}
 
 	byCat := groupSorted(findings)
@@ -282,34 +276,6 @@ func Markdown(w io.Writer, findings []scanner.Finding, opts Options) {
 func mdCell(s string) string {
 	s = strings.ReplaceAll(s, "|", "\\|")
 	return strings.ReplaceAll(s, "\n", " ")
-}
-
-// JSONReport is the machine-readable envelope.
-type JSONReport struct {
-	Roots           []string          `json:"roots"`
-	ScannedFiles    int               `json:"scanned_files"`
-	ActionableCount int               `json:"actionable_count"`
-	VersionNote     string            `json:"version_note,omitempty"`
-	Findings        []scanner.Finding `json:"findings"`
-}
-
-// JSON writes the findings as indented JSON, localizing each Message.
-func JSON(w io.Writer, findings []scanner.Finding, roots []string, scanned int, opts Options) error {
-	out := make([]scanner.Finding, len(findings))
-	for i, f := range findings {
-		f.Message = localize(f, opts.Lang)
-		out[i] = f
-	}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	enc.SetEscapeHTML(false)
-	return enc.Encode(JSONReport{
-		Roots:           roots,
-		ScannedFiles:    scanned,
-		ActionableCount: CountActionable(out),
-		VersionNote:     opts.VersionNote,
-		Findings:        out,
-	})
 }
 
 // CountActionable returns the number of non-PRESENT findings.

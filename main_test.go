@@ -42,13 +42,13 @@ func TestCLI_Version(t *testing.T) {
 	}
 }
 
-func TestCLI_ScanTestdata_ExitAndJSON(t *testing.T) {
-	out, _, code := runArgs("--json", "testdata")
+func TestCLI_ScanTestdata_ExitAndSummary(t *testing.T) {
+	out, _, code := runArgs("--format", "text", "--lang", "en", "--no-color", "testdata")
 	if code != 1 {
 		t.Errorf("exit=%d want 1 (findings present)", code)
 	}
-	if !strings.Contains(out, `"actionable_count": 16`) {
-		t.Errorf("expected actionable_count 16 in JSON, got:\n%s", out)
+	if !strings.Contains(out, "16 to fix") {
+		t.Errorf("expected 16 actionable in summary, got:\n%s", out)
 	}
 }
 
@@ -92,15 +92,15 @@ func TestCLI_BadFailOn(t *testing.T) {
 }
 
 func TestCLI_LangZH(t *testing.T) {
-	out, _, _ := runArgs("--lang", "zh", "--no-color", "testdata/modules")
-	if !strings.Contains(out, "【类别说明】") || !strings.Contains(out, "模块:") {
+	out, _, _ := runArgs("--format", "text", "--lang", "zh", "--no-color", "testdata/modules")
+	if !strings.Contains(out, "【类别说明】") || !strings.Contains(out, "[MODULE]") {
 		t.Errorf("zh output missing expected markers:\n%s", out)
 	}
 }
 
 func TestCLI_LangEN(t *testing.T) {
-	out, _, _ := runArgs("--lang", "en", "--no-color", "testdata/modules")
-	if !strings.Contains(out, "[Legend]") || !strings.Contains(out, "Module:") {
+	out, _, _ := runArgs("--format", "text", "--lang", "en", "--no-color", "testdata/modules")
+	if !strings.Contains(out, "[Legend]") || !strings.Contains(out, "[MODULE]") {
 		t.Errorf("en output missing expected markers:\n%s", out)
 	}
 }
@@ -139,12 +139,12 @@ func TestCLI_OutputToFile(t *testing.T) {
 
 func TestCLI_Engines(t *testing.T) {
 	for _, eng := range []string{"auto", "hcl", "regex"} {
-		out, _, code := runArgs("--engine", eng, "--json", "testdata")
+		out, _, code := runArgs("--format", "text", "--engine", eng, "--lang", "en", "--no-color", "testdata")
 		if code != 1 {
 			t.Errorf("engine %s exit=%d want 1", eng, code)
 		}
-		if !strings.Contains(out, `"actionable_count": 16`) {
-			t.Errorf("engine %s: expected actionable_count 16", eng)
+		if !strings.Contains(out, "16 to fix") {
+			t.Errorf("engine %s: expected 16 actionable in summary", eng)
 		}
 	}
 }
@@ -176,8 +176,8 @@ func TestCLI_MarkdownAlias(t *testing.T) {
 
 func TestCLI_Exclude(t *testing.T) {
 	// excluding the modules subdir drops the 4 MODULE findings
-	out, _, _ := runArgs("--json", "--exclude", "**/modules/**", "testdata")
-	if strings.Contains(out, `"category": "MODULE"`) {
+	out, _, _ := runArgs("--format", "text", "--lang", "en", "--no-color", "--exclude", "**/modules/**", "testdata")
+	if strings.Contains(out, "[MODULE]") {
 		t.Error("excluded modules dir should yield no MODULE findings")
 	}
 }
@@ -195,8 +195,8 @@ func TestCLI_FailOnArgAndRef(t *testing.T) {
 func TestCLI_AutoLangFromEnv(t *testing.T) {
 	t.Setenv("LANG", "zh_CN.UTF-8")
 	t.Setenv("LC_ALL", "")
-	out, _, _ := runArgs("--no-color", "testdata/modules") // no --lang -> auto
-	if !strings.Contains(out, "模块:") {
+	out, _, _ := runArgs("--format", "text", "--no-color", "testdata/modules") // no --lang -> auto
+	if !strings.Contains(out, "汇总:") {
 		t.Errorf("auto-lang from $LANG=zh should render Chinese:\n%s", out)
 	}
 }
@@ -217,7 +217,7 @@ func TestCLI_TextToFile(t *testing.T) {
 }
 
 func TestCLI_GroupByResource(t *testing.T) {
-	out, _, code := runArgs("--group-by", "resource", "--lang", "en", "--no-color", "--quiet", "testdata/resources")
+	out, _, code := runArgs("--format", "text", "--group-by", "resource", "--lang", "en", "--no-color", "testdata/resources")
 	if code != 1 {
 		t.Errorf("exit=%d want 1", code)
 	}
@@ -237,7 +237,7 @@ func TestCLI_BadGroupBy(t *testing.T) {
 }
 
 func TestCLI_Tree(t *testing.T) {
-	out, _, _ := runArgs("--tree", "--lang", "en", "--no-color", "--quiet", "testdata")
+	out, _, _ := runArgs("--format", "text", "--lang", "en", "--no-color", "testdata")
 	if !strings.Contains(out, "Workspace structure") {
 		t.Errorf("tree header missing:\n%s", out)
 	}
@@ -251,10 +251,10 @@ func TestCLI_Tree(t *testing.T) {
 	}
 }
 
-func TestCLI_QuietOmitsLegend(t *testing.T) {
-	out, _, _ := runArgs("--lang", "zh", "--quiet", "--no-color", "testdata/modules")
-	if strings.Contains(out, "【类别说明】") {
-		t.Error("quiet should omit legend")
+func TestCLI_LegendAlwaysShown(t *testing.T) {
+	out, _, _ := runArgs("--format", "text", "--lang", "zh", "--no-color", "testdata/modules")
+	if !strings.Contains(out, "【类别说明】") {
+		t.Error("legend should always be shown")
 	}
 }
 

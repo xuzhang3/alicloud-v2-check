@@ -2,7 +2,6 @@ package report
 
 import (
 	"bytes"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -34,43 +33,11 @@ func TestText_HasLegendAndFileLine(t *testing.T) {
 	}
 }
 
-func TestText_QuietOmitsLegend(t *testing.T) {
-	var buf bytes.Buffer
-	Text(&buf, sample(), Options{Roots: []string{"."}, Quiet: true})
-	if strings.Contains(buf.String(), "【类别说明】") {
-		t.Error("quiet should omit legend")
-	}
-}
-
 func TestText_EmptyClean(t *testing.T) {
 	var buf bytes.Buffer
 	Text(&buf, nil, Options{Roots: []string{"."}})
 	if !strings.Contains(buf.String(), "未发现") {
 		t.Error("clean message missing")
-	}
-}
-
-func TestJSON_Shape(t *testing.T) {
-	var buf bytes.Buffer
-	if err := JSON(&buf, sample(), []string{"."}, 2, Options{}); err != nil {
-		t.Fatal(err)
-	}
-	var r JSONReport
-	if err := json.Unmarshal(buf.Bytes(), &r); err != nil {
-		t.Fatal(err)
-	}
-	if r.ScannedFiles != 2 {
-		t.Errorf("scanned=%d want 2", r.ScannedFiles)
-	}
-	if r.ActionableCount != 3 {
-		t.Errorf("actionable=%d want 3", r.ActionableCount)
-	}
-	if len(r.Findings) != 4 {
-		t.Errorf("findings=%d want 4", len(r.Findings))
-	}
-	// ensure non-escaped output for readability
-	if strings.Contains(buf.String(), `\u`) {
-		t.Error("JSON should not HTML/unicode-escape")
 	}
 }
 
@@ -130,16 +97,6 @@ func TestVersionNote(t *testing.T) {
 	}
 }
 
-func TestJSON_LocalizedMessageEN(t *testing.T) {
-	var buf bytes.Buffer
-	if err := JSON(&buf, sample(), []string{"."}, 1, Options{Lang: LangEN}); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(buf.String(), "must become block syntax") {
-		t.Error("JSON message should be localized to EN")
-	}
-}
-
 func TestAutoLang(t *testing.T) {
 	if AutoLang("zh_CN.UTF-8") != LangZH {
 		t.Error("zh_CN should map to zh")
@@ -154,7 +111,7 @@ func TestAutoLang(t *testing.T) {
 
 func TestText_GroupByResource(t *testing.T) {
 	var buf bytes.Buffer
-	Text(&buf, sample(), Options{Roots: []string{"."}, Lang: LangEN, GroupBy: GroupByResource, Quiet: true})
+	Text(&buf, sample(), Options{Roots: []string{"."}, Lang: LangEN, GroupBy: GroupByResource})
 	out := buf.String()
 	// sample has 2 findings on alicloud_cs_kubernetes (ARG line 3, REF line 8) + PRESENT
 	if !strings.Contains(out, "alicloud_cs_kubernetes  (3)") {
@@ -182,7 +139,7 @@ func TestTree(t *testing.T) {
 		{File: "ws/example1/a.tf", Line: 4, Category: scanner.PRESENT, Confidence: scanner.High}, // not actionable
 	}
 	var buf bytes.Buffer
-	Tree(&buf, files, findings, Options{Lang: LangEN})
+	Tree(&buf, files, findings, Options{Lang: LangEN}, false)
 	out := buf.String()
 
 	if !strings.Contains(out, "Workspace structure") {
@@ -207,6 +164,31 @@ func TestTree(t *testing.T) {
 	// connectors present
 	if !strings.Contains(out, "├── ") || !strings.Contains(out, "└── ") {
 		t.Error("missing tree connectors")
+	}
+}
+
+func TestTreePlain(t *testing.T) {
+	files := []string{"ws/a.tf", "ws/b.tf"}
+	findings := []scanner.Finding{
+		{File: "ws/a.tf", Line: 1, Category: scanner.ARG, Confidence: scanner.High},
+	}
+	var buf bytes.Buffer
+	Tree(&buf, files, findings, Options{Lang: LangEN}, true)
+	out := buf.String()
+	// ASCII-only connectors
+	if !strings.Contains(out, "|-- ") || !strings.Contains(out, "+-- ") {
+		t.Errorf("plain tree should use ASCII connectors:\n%s", out)
+	}
+	// plain badges
+	if !strings.Contains(out, "a.tf  ! 1") {
+		t.Errorf("plain badge wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "b.tf  ok") {
+		t.Errorf("plain clean badge wrong:\n%s", out)
+	}
+	// no Unicode
+	if strings.ContainsAny(out, "├└│⚠✓") {
+		t.Error("plain tree should not contain Unicode")
 	}
 }
 
