@@ -12,7 +12,7 @@
 
 从 [Releases](../../releases) 下载对应平台的压缩包，解压后把 `alicloud-v2-check` 放进 `PATH`。
 
-支持平台：`linux/amd64`、`linux/arm64`、`darwin/amd64`、`darwin/arm64`、`windows/amd64`、`windows/arm64`。
+支持平台：`linux/amd64`、`linux/arm64`、`linux/386`、`darwin/amd64`、`darwin/arm64`、`windows/amd64`、`windows/arm64`、`windows/386`。
 
 校验：
 ```bash
@@ -33,17 +33,17 @@ make build-all      # 交叉编译所有平台到 dist/
 ## 用法
 
 ```bash
-# 默认扫描当前工作空间（无需任何参数）
+# 默认扫描当前工作空间（无需任何参数），输出 Markdown 格式
 alicloud-v2-check
 
 # 扫描指定目录 / 文件（可多个）
 alicloud-v2-check ./infra ./modules/rds/main.tf
 
-# JSON 输出（供 CI / 脚本消费）
-alicloud-v2-check --json ./infra
-
 # 导出 Markdown 报告到文件（贴 PR / wiki / issue）
-alicloud-v2-check --format markdown -o v2-report.md ./infra
+alicloud-v2-check -o v2-report.md ./infra
+
+# 输出纯文本格式
+alicloud-v2-check --format text ./infra
 
 # 排除路径（可重复；支持 **/dir/** 段匹配）
 alicloud-v2-check --exclude '**/vendor/**' --exclude examples .
@@ -52,24 +52,21 @@ alicloud-v2-check --exclude '**/vendor/**' --exclude examples .
 alicloud-v2-check --fail-on module .
 ```
 
-不带任何路径参数时，**默认扫描当前目录（整个工作空间）**，并自动排除 `**/.claude/**`。
+不带任何路径参数时，**默认扫描当前目录（整个工作空间）**，并自动排除 `**/.claude/**`、`testdata`、`.terraform`、`.git` 等目录。
 
 ### 选项
 
 | 选项 | 说明 |
 |------|------|
-| `--format text\|json\|markdown` | 输出格式（默认 text） |
-| `--json` | 等价于 `--format json` |
+| `--format text\|markdown` | 输出格式（默认 markdown） |
 | `--output`, `-o <file>` | 写入文件而非 stdout |
 | `--engine auto\|hcl\|regex` | 解析引擎（默认 auto） |
 | `--lang zh\|en` | 输出语言（默认按 `$LANG` 自动判定） |
 | `--exclude <glob>` | 排除路径，可重复；默认已内置 `**/.claude/**` |
 | `--fail-on none\|module\|ref\|arg\|any` | 退出码策略（默认 `any`） |
-| `--group-by category\|resource` | 报告分组方式（默认 category）；resource 按资源名归类 |
+| `--group-by category\|resource` | 报告分组方式（默认 resource）；resource 按资源名归类 |
 | `--ignore-version` | 即使 provider 约束指向 v3+ 也照常扫描 |
-| `--tree` | 先打印扫描到的工作空间结构树（文件标 ⚠ n / ✓）；仅 text/markdown |
 | `--no-color` | 关闭彩色（非 TTY 自动关闭） |
-| `--quiet` | 省略顶部类别说明图例 |
 | `--version` | 打印版本 |
 | `--help`, `-h` | 帮助 |
 
@@ -83,7 +80,7 @@ alicloud-v2-check --fail-on module .
 
 CI 门禁示例：
 ```bash
-alicloud-v2-check . || { echo "存在 alicloud v2 breaking change"; exit 1; }
+alicloud-v2-check --format text . || { echo "存在 alicloud v2 breaking change"; exit 1; }
 ```
 
 ## 检测类别
@@ -134,7 +131,7 @@ alicloud-v2-check --engine regex ./infra  # 可能多报 heredoc 里的示例
 
 ## 多语言 i18n
 
-`--lang zh|en` 切换中英文报告（缺省按 `$LANG` 自动判定）。JSON 的 `message` 字段同样本地化。
+`--lang zh|en` 切换中英文报告（缺省按 `$LANG` 自动判定）。
 
 ## 说明
 

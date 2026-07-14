@@ -9,10 +9,12 @@ LDFLAGS     := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main
 PLATFORMS := \
 	linux/amd64 \
 	linux/arm64 \
+	linux/386 \
 	darwin/amd64 \
 	darwin/arm64 \
 	windows/amd64 \
-	windows/arm64
+	windows/arm64 \
+	windows/386
 
 .PHONY: all build test vet fmt clean build-all $(PLATFORMS) snapshot
 
