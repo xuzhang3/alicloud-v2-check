@@ -5,9 +5,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/aliyun/alicloud-v2-check/internal/rules"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
+	"github.com/xuzhang3/alicloud-v2-check/internal/rules"
 	"github.com/zclconf/go-cty/cty"
 )
 

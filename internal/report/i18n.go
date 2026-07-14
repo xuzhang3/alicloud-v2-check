@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aliyun/alicloud-v2-check/internal/rules"
-	"github.com/aliyun/alicloud-v2-check/internal/scanner"
+	"github.com/xuzhang3/alicloud-v2-check/internal/rules"
+	"github.com/xuzhang3/alicloud-v2-check/internal/scanner"
 )
 
 // Lang selects the output language.

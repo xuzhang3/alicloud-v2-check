@@ -12,7 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/aliyun/alicloud-v2-check/internal/rules"
+	"github.com/xuzhang3/alicloud-v2-check/internal/rules"
 )
 
 // Category classifies a finding.
@@ -231,13 +231,23 @@ func ScanFile(path string) ([]Finding, error) {
 		line := stripInlineComment(raw)
 
 		// Track enclosing affected block type (shallow) and emit PRESENT.
-		if m := reResourceDecl.FindStringSubmatch(line); m != nil && rules.IsAffectedType(m[1]) {
-			currentType = m[1]
-			findings = append(findings, newPresent(path, lineNo, m[1], raw))
+		// Reset currentType on ANY resource/data decl so non-affected blocks
+		// don't inherit stale type from a previous affected block.
+		if m := reResourceDecl.FindStringSubmatch(line); m != nil {
+			if rules.IsAffectedType(m[1]) {
+				currentType = m[1]
+				findings = append(findings, newPresent(path, lineNo, m[1], raw))
+			} else {
+				currentType = ""
+			}
 		}
-		if m := reDataDecl.FindStringSubmatch(line); m != nil && rules.IsAffectedType(m[1]) {
-			currentType = m[1]
-			findings = append(findings, newPresent(path, lineNo, m[1], raw))
+		if m := reDataDecl.FindStringSubmatch(line); m != nil {
+			if rules.IsAffectedType(m[1]) {
+				currentType = m[1]
+				findings = append(findings, newPresent(path, lineNo, m[1], raw))
+			} else {
+				currentType = ""
+			}
 		}
 
 		// [ARG] map assign -> block
@@ -308,20 +318,27 @@ func lastTypeToken(prefix string) string {
 }
 
 // stripInlineComment removes # and // comments outside of double-quoted strings.
+// Properly handles backslash-escaped quotes inside strings.
 func stripInlineComment(line string) string {
-	for _, marker := range []string{"#", "//"} {
-		idx := strings.Index(line, marker)
-		for idx != -1 {
-			if strings.Count(line[:idx], `"`)%2 == 0 {
-				line = line[:idx]
-				break
-			}
-			next := strings.Index(line[idx+1:], marker)
-			if next == -1 {
-				idx = -1
-			} else {
-				idx = idx + 1 + next
-			}
+	inStr := false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if c == '\\' && inStr {
+			i++ // skip escaped char
+			continue
+		}
+		if c == '"' {
+			inStr = !inStr
+			continue
+		}
+		if inStr {
+			continue
+		}
+		if c == '#' {
+			return line[:i]
+		}
+		if c == '/' && i+1 < len(line) && line[i+1] == '/' {
+			return line[:i]
 		}
 	}
 	return line

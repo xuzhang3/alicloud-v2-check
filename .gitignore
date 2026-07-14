@@ -2,3 +2,4 @@
 /dist/
 .terraform/
 .terraform.lock.hcl
+/alicloud-v2-check

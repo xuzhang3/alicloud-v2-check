@@ -1,4 +1,4 @@
-module github.com/aliyun/alicloud-v2-check
+module github.com/xuzhang3/alicloud-v2-check
 
 go 1.26.4
 

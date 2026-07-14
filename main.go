@@ -10,10 +10,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/aliyun/alicloud-v2-check/internal/report"
-	"github.com/aliyun/alicloud-v2-check/internal/scanner"
-	"github.com/aliyun/alicloud-v2-check/internal/tfversion"
 	"github.com/spf13/cobra"
+	"github.com/xuzhang3/alicloud-v2-check/internal/report"
+	"github.com/xuzhang3/alicloud-v2-check/internal/scanner"
+	"github.com/xuzhang3/alicloud-v2-check/internal/tfversion"
 )
 
 // injected via -ldflags at build time

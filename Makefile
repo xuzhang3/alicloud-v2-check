@@ -1,5 +1,5 @@
 BINARY      := alicloud-v2-check
-PKG         := github.com/aliyun/alicloud-v2-check
+PKG         := github.com/xuzhang3/alicloud-v2-check
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE        ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)

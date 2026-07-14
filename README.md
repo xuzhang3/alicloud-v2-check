@@ -21,7 +21,7 @@ sha256sum -c checksums.txt
 
 ### 用 Go 安装
 ```bash
-go install github.com/aliyun/alicloud-v2-check@latest
+go install github.com/xuzhang3/alicloud-v2-check@latest
 ```
 
 ### 从源码构建
