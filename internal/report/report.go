@@ -243,31 +243,66 @@ func Markdown(w io.Writer, findings []scanner.Finding, opts Options) {
 		fmt.Fprintf(w, "- **%s** — %s\n", cat, bd.legend[cat])
 	}
 
-	byCat := groupSorted(findings)
-	for _, cat := range order {
-		items := byCat[cat]
-		if len(items) == 0 {
-			continue
+	if opts.GroupBy == GroupByResource {
+		for _, g := range groupByResource(findings, bd) {
+			fmt.Fprintf(w, "\n## %s (%d)\n\n", g.title, len(g.items))
+			// detect if group has MODULE findings to choose table layout
+			hasModule := false
+			for _, f := range g.items {
+				if f.Category == scanner.MODULE {
+					hasModule = true
+					break
+				}
+			}
+			if hasModule {
+				fmt.Fprintf(w, "| %s | %s | %s |\n|---|---|---|\n", bd.lblFile, bd.lblModule, bd.lblAdvice)
+				for _, f := range g.items {
+					cat := "[" + string(f.Category) + "]"
+					fmt.Fprintf(w, "| `%s:%d` %s | %s | %s |\n",
+						f.File, f.Line, cat, mdCell(orDash(f.Target)), mdCell(localize(f, opts.Lang)))
+				}
+			} else {
+				fmt.Fprintf(w, "| %s | %s | %s | %s |\n|---|---|---|---|\n",
+					bd.lblFile, bd.lblResource, bd.lblField, bd.lblAdvice)
+				for _, f := range g.items {
+					conf := ""
+					if f.Confidence != scanner.High {
+						conf = " " + bd.heurTag
+					}
+					cat := "[" + string(f.Category) + "]"
+					fmt.Fprintf(w, "| `%s:%d`%s %s | %s | %s | %s |\n",
+						f.File, f.Line, conf, cat, mdCell(orUnknown(f.Target, bd)),
+						mdCell(orDash(f.Attr)), mdCell(localize(f, opts.Lang)))
+				}
+			}
 		}
-		fmt.Fprintf(w, "\n## [%s] %s (%d)\n\n", cat, bd.catTitle[cat], len(items))
-		if cat == scanner.MODULE {
-			fmt.Fprintf(w, "| %s | %s | %s |\n|---|---|---|\n", bd.lblFile, bd.lblModule, bd.lblAdvice)
+	} else {
+		byCat := groupSorted(findings)
+		for _, cat := range order {
+			items := byCat[cat]
+			if len(items) == 0 {
+				continue
+			}
+			fmt.Fprintf(w, "\n## [%s] %s (%d)\n\n", cat, bd.catTitle[cat], len(items))
+			if cat == scanner.MODULE {
+				fmt.Fprintf(w, "| %s | %s | %s |\n|---|---|---|\n", bd.lblFile, bd.lblModule, bd.lblAdvice)
+				for _, f := range items {
+					fmt.Fprintf(w, "| `%s:%d` | %s | %s |\n",
+						f.File, f.Line, mdCell(orDash(f.Target)), mdCell(localize(f, opts.Lang)))
+				}
+				continue
+			}
+			fmt.Fprintf(w, "| %s | %s | %s | %s |\n|---|---|---|---|\n",
+				bd.lblFile, bd.lblResource, bd.lblField, bd.lblAdvice)
 			for _, f := range items {
-				fmt.Fprintf(w, "| `%s:%d` | %s | %s |\n",
-					f.File, f.Line, mdCell(orDash(f.Target)), mdCell(localize(f, opts.Lang)))
+				conf := ""
+				if f.Confidence != scanner.High {
+					conf = " " + bd.heurTag
+				}
+				fmt.Fprintf(w, "| `%s:%d`%s | %s | %s | %s |\n",
+					f.File, f.Line, conf, mdCell(orUnknown(f.Target, bd)),
+					mdCell(orDash(f.Attr)), mdCell(localize(f, opts.Lang)))
 			}
-			continue
-		}
-		fmt.Fprintf(w, "| %s | %s | %s | %s |\n|---|---|---|---|\n",
-			bd.lblFile, bd.lblResource, bd.lblField, bd.lblAdvice)
-		for _, f := range items {
-			conf := ""
-			if f.Confidence != scanner.High {
-				conf = " " + bd.heurTag
-			}
-			fmt.Fprintf(w, "| `%s:%d`%s | %s | %s | %s |\n",
-				f.File, f.Line, conf, mdCell(orUnknown(f.Target, bd)),
-				mdCell(orDash(f.Attr)), mdCell(localize(f, opts.Lang)))
 		}
 	}
 }
