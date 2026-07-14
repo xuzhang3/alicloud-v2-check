@@ -53,9 +53,9 @@ func Tree(w io.Writer, files []string, findings []scanner.Finding, opts Options,
 	if plain {
 		switch opts.Lang {
 		case LangZH:
-			fmt.Fprintln(w, "工作空间结构（! n = 待处理项数，ok = 无问题）：")
+			fmt.Fprintln(w, "工作空间结构（n = 待处理项数，ok = 无问题）：")
 		default:
-			fmt.Fprintln(w, "Workspace structure (! n = items to fix, ok = clean):")
+			fmt.Fprintln(w, "Workspace structure (n = items to fix, ok = clean):")
 		}
 	} else {
 		fmt.Fprintln(w, b(opts.Lang).treeTitle)
@@ -109,7 +109,7 @@ func badge(n *treeNode, plain bool) string {
 	switch {
 	case n.isFile && n.count > 0:
 		if plain {
-			return fmt.Sprintf("  ! %d", n.count)
+			return fmt.Sprintf("  %d", n.count)
 		}
 		return fmt.Sprintf("  ⚠ %d", n.count)
 	case n.isFile:

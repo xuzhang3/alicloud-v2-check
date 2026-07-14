@@ -180,7 +180,7 @@ func TestTreePlain(t *testing.T) {
 		t.Errorf("plain tree should use ASCII connectors:\n%s", out)
 	}
 	// plain badges
-	if !strings.Contains(out, "a.tf  ! 1") {
+	if !strings.Contains(out, "a.tf  1") {
 		t.Errorf("plain badge wrong:\n%s", out)
 	}
 	if !strings.Contains(out, "b.tf  ok") {

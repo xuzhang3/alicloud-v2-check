@@ -179,7 +179,7 @@ func Text(w io.Writer, findings []scanner.Finding, opts Options) {
 
 	fmt.Fprintln(w, "\n"+bd.legendHead)
 	for _, cat := range order {
-		fmt.Fprintf(w, "  [%-7s] %s\n", cat, bd.legend[cat])
+		fmt.Fprintf(w, "  %s\n", bd.legend[cat])
 	}
 	fmt.Fprintln(w, bd.heuristic)
 
@@ -240,7 +240,7 @@ func Markdown(w io.Writer, findings []scanner.Finding, opts Options) {
 
 	fmt.Fprintf(w, "\n## %s\n\n", strings.Trim(bd.legendHead, "【】:："))
 	for _, cat := range order {
-		fmt.Fprintf(w, "- **%s** — %s\n", cat, bd.legend[cat])
+		fmt.Fprintf(w, "- %s\n", bd.legend[cat])
 	}
 
 	if opts.GroupBy == GroupByResource {
